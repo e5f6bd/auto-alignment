@@ -1,3 +1,6 @@
+// TODO: remove
+#![allow(unused)]
+
 use std::f64::consts::TAU;
 
 use sdl2::{event::Event, pixels::Color};
@@ -14,19 +17,51 @@ fn main() -> anyhow::Result<()> {
 
     let joystick = sdl.joystick()?;
     let _joystick = joystick.open(0)?;
-    let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
+    // let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
+
+    let mut state = UiState::new();
 
     let mut event = sdl.event_pump()?;
 
     'outer_loop: loop {
         for event in event.poll_iter() {
             match event {
+                Event::JoyButtonDown { button_idx, .. } => {
+                    use JoyButton::*;
+                    match button_idx {
+                        0 => state.handle_button(A),
+                        1 => state.handle_button(B),
+                        11 => state.handle_button(Up),
+                        12 => state.handle_button(Down),
+                        13 => state.handle_button(Left),
+                        14 => state.handle_button(Right),
+                        _ => {}
+                    }
+                }
+                // Sometimes, the + button is recognized as these events
+                Event::JoyHatMotion {
+                    hat_idx,
+                    state: joy_state,
+                    ..
+                } => {
+                    dbg!();
+                    if hat_idx == 0 {
+                        use JoyButton::*;
+                        match joy_state {
+                            sdl2::joystick::HatState::Up => state.handle_button(Up),
+                            sdl2::joystick::HatState::Down => state.handle_button(Down),
+                            sdl2::joystick::HatState::Left => state.handle_button(Left),
+                            sdl2::joystick::HatState::Right => state.handle_button(Right),
+                            _ => {}
+                        }
+                    }
+                }
                 Event::JoyAxisMotion {
                     axis_idx, value, ..
                 } => {
-                    if let Some(manager) = managers.get_mut(axis_idx as usize / 2) {
-                        manager.update(axis_idx as usize % 2, value);
-                    }
+                    // if let Some(manager) = managers.get_mut(axis_idx as usize / 2) {
+                    //     manager.update(axis_idx as usize % 2, value);
+                    // }
                 }
                 Event::Quit { .. } => break 'outer_loop,
                 _ => (),
@@ -36,21 +71,61 @@ fn main() -> anyhow::Result<()> {
         canvas.set_draw_color(Color::BLACK);
         canvas.clear();
 
-        for (i, manager) in managers.iter().enumerate() {
-            let x = w as i32 * (2 * i + 1) as i32 / 4;
-            let y = h as i32 / 2;
-            let theta = TAU * manager.indicator_position as f64 / 36.;
-            let length = 200.;
-            let dx = (theta.cos() * length) as i32;
-            let dy = (-theta.sin() * length) as i32;
-            canvas.set_draw_color(Color::RED);
-            canvas.draw_line((x, y), (x + dx, y + dy))?;
-        }
+        // for (i, manager) in managers.iter().enumerate() {
+        //     let x = w as i32 * (2 * i + 1) as i32 / 4;
+        //     let y = h as i32 / 2;
+        //     let theta = TAU * manager.indicator_position as f64 / 36.;
+        //     let length = 200.;
+        //     let dx = (theta.cos() * length) as i32;
+        //     let dy = (-theta.sin() * length) as i32;
+        //     canvas.set_draw_color(Color::RED);
+        //     canvas.draw_line((x, y), (x + dx, y + dy))?;
+        // }
 
         canvas.present();
     }
 
     Ok(())
+}
+
+struct UiState {
+    axis_choices: Vec<Vec<AxisChoice>>,
+    selections: [usize; 2],
+    mode: Mode,
+}
+#[derive(Clone)]
+struct AxisChoice(usize);
+enum Mode {
+    Selecting(bool), // choosing .0 as usize
+    Operating,
+}
+
+#[derive(Debug)]
+enum JoyButton {
+    A,
+    B,
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+impl UiState {
+    fn new() -> Self {
+        let mut axis_choices = vec![Vec::<AxisChoice>::new(); 4];
+        for i in 0..22 {
+            axis_choices[i / 6].push(AxisChoice(i));
+        }
+        Self {
+            axis_choices,
+            selections: [0, 1],
+            mode: Mode::Selecting(false),
+        }
+    }
+
+    fn handle_button(&self, button: JoyButton) {
+        dbg!(button);
+    }
 }
 
 #[derive(Clone, Default)]
