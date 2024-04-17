@@ -44,7 +44,6 @@ fn main() -> anyhow::Result<()> {
                     state: joy_state,
                     ..
                 } => {
-                    dbg!();
                     if hat_idx == 0 {
                         use JoyButton::*;
                         match joy_state {
@@ -88,13 +87,16 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[derive(Debug)]
 struct UiState {
     axis_choices: Vec<Vec<AxisChoice>>,
-    selections: [usize; 2],
+    selections: [(usize, usize); 2],
     mode: Mode,
+    message: String,
 }
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 struct AxisChoice(usize);
+#[derive(Debug)]
 enum Mode {
     Selecting(bool), // choosing .0 as usize
     Operating,
@@ -118,13 +120,50 @@ impl UiState {
         }
         Self {
             axis_choices,
-            selections: [0, 1],
+            selections: [(0, 0), (0, 1)],
             mode: Mode::Selecting(false),
+            message: "".to_owned(),
         }
     }
 
-    fn handle_button(&self, button: JoyButton) {
-        dbg!(button);
+    fn handle_button(&mut self, button: JoyButton) {
+        use JoyButton::*;
+        let m1 = !0;
+        match self.mode {
+            Mode::Selecting(x) => match button {
+                A => {
+                    if self.selections[0] == self.selections[1] {
+                        self.message = "Selection must be different".to_owned();
+                    } else {
+                        self.mode = Mode::Operating;
+                    }
+                }
+                B => self.mode = Mode::Selecting(!x),
+                Up => self.move_cursor(x, m1, 0),
+                Down => self.move_cursor(x, 1, 0),
+                Left => self.move_cursor(x, 0, m1),
+                Right => self.move_cursor(x, 0, 1),
+            },
+            Mode::Operating => {
+                if let B = button {
+                    self.mode = Mode::Selecting(false)
+                }
+            }
+        }
+        println!("{self:?}");
+    }
+
+    fn move_cursor(&mut self, which: bool, dr: isize, dc: isize) {
+        let (r, c) = self.selections[which as usize];
+        let r = (r as isize + dr).rem_euclid(self.axis_choices.len() as _) as usize;
+        let c = c.min(self.axis_choices[r].len() - 1);
+        let c = (c as isize + dc).rem_euclid(self.axis_choices[r].len() as _) as usize;
+        let r = (0..=r)
+            .rev()
+            .find(|&r| c < self.axis_choices[r].len())
+            .unwrap();
+        assert!(self.axis_choices.get(r).and_then(|a| a.get(c)).is_some());
+        self.selections[which as usize] = (r, c);
     }
 }
 
