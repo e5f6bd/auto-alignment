@@ -14,7 +14,7 @@ fn main() -> anyhow::Result<()> {
 
     let joystick = sdl.joystick()?;
     let _joystick = joystick.open(0)?;
-    let mut managers = vec![(JoystickAxisManager::default(), 0); 2];
+    let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
 
     let mut event = sdl.event_pump()?;
 
@@ -24,9 +24,8 @@ fn main() -> anyhow::Result<()> {
                 Event::JoyAxisMotion {
                     axis_idx, value, ..
                 } => {
-                    if let Some((manager, rotation)) = managers.get_mut(axis_idx as usize / 2) {
-                        *rotation += manager.update(axis_idx as usize % 2, value);
-                        *rotation = rotation.rem_euclid(36);
+                    if let Some(manager) = managers.get_mut(axis_idx as usize / 2) {
+                        manager.update(axis_idx as usize % 2, value);
                     }
                 }
                 Event::Quit { .. } => break 'outer_loop,
@@ -37,10 +36,10 @@ fn main() -> anyhow::Result<()> {
         canvas.set_draw_color(Color::BLACK);
         canvas.clear();
 
-        for (i, &(_, rotation)) in managers.iter().enumerate() {
+        for (i, manager) in managers.iter().enumerate() {
             let x = w as i32 * (2 * i + 1) as i32 / 4;
             let y = h as i32 / 2;
-            let theta = TAU * rotation as f64 / 36.;
+            let theta = TAU * manager.indicator_position as f64 / 36.;
             let length = 200.;
             let dx = (theta.cos() * length) as i32;
             let dy = (-theta.sin() * length) as i32;
@@ -52,6 +51,19 @@ fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+#[derive(Clone, Default)]
+struct JoystickAxisManagerWithIndicator {
+    indicator_position: i16,
+    manager: JoystickAxisManager,
+}
+impl JoystickAxisManagerWithIndicator {
+    fn update(&mut self, axis: usize, value: i16) -> i16 {
+        let delta = self.manager.update(axis, value);
+        self.indicator_position = (self.indicator_position + delta).rem_euclid(36);
+        delta
+    }
 }
 
 #[derive(Clone, Default)]
