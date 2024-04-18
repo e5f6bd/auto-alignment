@@ -1,10 +1,10 @@
 // TODO: remove
 #![allow(unused)]
 
-use std::{f64::consts::TAU, path::PathBuf};
+use std::{f64::consts::TAU, path::PathBuf, time::Instant};
 
 use itertools::Itertools;
-use sdl2::{event::Event, pixels::Color, rect::Rect};
+use sdl2::{event::Event, pixels::Color, rect::Rect, render::BlendMode};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -79,8 +79,8 @@ fn main() -> anyhow::Result<()> {
         canvas.set_draw_color(Color::BLACK);
         canvas.clear();
 
-        let button_width = 80;
-        let button_height = 50;
+        let button_width = 140;
+        let button_height = 100;
         let length_w = state.axis_choices.iter().map(|x| x.len()).max().unwrap() as i32;
         let length_h = state.axis_choices.len() as i32;
         let rect_of_choice = |(i, j): (usize, usize)| {
@@ -99,8 +99,18 @@ fn main() -> anyhow::Result<()> {
             }
         }
 
-        for i in (0..2).rev().sorted_by_key(|&i| state.mode == Mode::Selecting(i > 0)) {
-            let color = if i == 0 { Color::RED } else { Color::BLUE };
+        for i in ((0..2).rev())
+            .sorted_by_key(|&i| (state.mode.selecting_value()).is_some_and(|j| j as usize == i))
+        {
+            let mut color = if i == 0 { Color::RED } else { Color::BLUE };
+            if let Mode::Selecting(j, time) = state.mode {
+                if i == j as usize {
+                    let t = 1. - ((Instant::now() - time).as_millis() as f64 / 600.).fract();
+                    let a = (255. * t) as u8;
+                    color = Color::RGBA(color.r, color.g, color.b, a);
+                }
+            }
+            canvas.set_blend_mode(BlendMode::Blend);
             canvas.set_draw_color(color);
             let rect = rect_of_choice(state.selections[i]);
             let lines = [
@@ -114,6 +124,7 @@ fn main() -> anyhow::Result<()> {
                 Rect::new(x - d, y - d, w + d as u32 * 2, h + d as u32 * 2)
             });
             canvas.fill_rects(&rects);
+            canvas.set_blend_mode(BlendMode::None);
         }
 
         // for (i, manager) in managers.iter().enumerate() {
@@ -142,10 +153,21 @@ struct UiState {
 }
 #[derive(Debug, Clone)]
 struct AxisChoice(usize);
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
-    Selecting(bool), // choosing .0 as usize
+    Selecting(bool, Instant), // choosing .0 as usize
     Operating,
+}
+impl Mode {
+    fn selecting(value: bool) -> Self {
+        Self::Selecting(value, Instant::now())
+    }
+    fn selecting_value(self) -> Option<bool> {
+        match self {
+            Self::Selecting(v, _) => Some(v),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -167,7 +189,7 @@ impl UiState {
         Self {
             axis_choices,
             selections: [(0, 0), (0, 1)],
-            mode: Mode::Selecting(false),
+            mode: Mode::selecting(false),
             message: "".to_owned(),
         }
     }
@@ -176,7 +198,7 @@ impl UiState {
         use JoyButton::*;
         let m1 = !0;
         match self.mode {
-            Mode::Selecting(x) => match button {
+            Mode::Selecting(x, _) => match button {
                 A => {
                     if self.selections[0] == self.selections[1] {
                         self.message = "Selection must be different".to_owned();
@@ -184,7 +206,7 @@ impl UiState {
                         self.mode = Mode::Operating;
                     }
                 }
-                B => self.mode = Mode::Selecting(!x),
+                B => self.mode = Mode::selecting(!x),
                 Up => self.move_cursor(x, m1, 0),
                 Down => self.move_cursor(x, 1, 0),
                 Left => self.move_cursor(x, 0, m1),
@@ -192,11 +214,10 @@ impl UiState {
             },
             Mode::Operating => {
                 if let B = button {
-                    self.mode = Mode::Selecting(false)
+                    self.mode = Mode::selecting(false)
                 }
             }
         }
-        println!("{self:?}");
     }
 
     fn move_cursor(&mut self, which: bool, dr: isize, dc: isize) {
