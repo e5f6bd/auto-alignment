@@ -1,11 +1,20 @@
 // TODO: remove
 #![allow(unused)]
 
-use std::f64::consts::TAU;
+use std::{f64::consts::TAU, path::PathBuf};
 
-use sdl2::{event::Event, pixels::Color};
+use itertools::Itertools;
+use sdl2::{event::Event, pixels::Color, rect::Rect};
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct Config {
+    font_path: PathBuf,
+}
 
 fn main() -> anyhow::Result<()> {
+    let config: Config = toml::from_str(&fs_err::read_to_string("config.toml")?)?;
+
     let sdl = sdl2::init()?;
 
     let w = 960;
@@ -70,6 +79,43 @@ fn main() -> anyhow::Result<()> {
         canvas.set_draw_color(Color::BLACK);
         canvas.clear();
 
+        let button_width = 80;
+        let button_height = 50;
+        let length_w = state.axis_choices.iter().map(|x| x.len()).max().unwrap() as i32;
+        let length_h = state.axis_choices.len() as i32;
+        let rect_of_choice = |(i, j): (usize, usize)| {
+            Rect::new(
+                w as i32 / 2 + button_width as i32 * (j as i32 * 2 - length_w) / 2,
+                h as i32 / 2 + button_height as i32 * (i as i32 * 2 - length_h) / 2,
+                button_width,
+                button_height,
+            )
+        };
+
+        for (i, choices) in state.axis_choices.iter().enumerate() {
+            for (j, choice) in choices.iter().enumerate() {
+                canvas.set_draw_color(Color::RGB(30, 30, 30));
+                canvas.draw_rect(rect_of_choice((i, j)));
+            }
+        }
+
+        for i in (0..2).rev().sorted_by_key(|&i| state.mode == Mode::Selecting(i > 0)) {
+            let color = if i == 0 { Color::RED } else { Color::BLUE };
+            canvas.set_draw_color(color);
+            let rect = rect_of_choice(state.selections[i]);
+            let lines = [
+                (rect.left(), rect.top(), rect.width(), 0),
+                (rect.left(), rect.bottom(), rect.width(), 0),
+                (rect.left(), rect.top(), 0, rect.height()),
+                (rect.right(), rect.top(), 0, rect.height()),
+            ];
+            let rects = lines.map(|(x, y, w, h)| {
+                let d = 2;
+                Rect::new(x - d, y - d, w + d as u32 * 2, h + d as u32 * 2)
+            });
+            canvas.fill_rects(&rects);
+        }
+
         // for (i, manager) in managers.iter().enumerate() {
         //     let x = w as i32 * (2 * i + 1) as i32 / 4;
         //     let y = h as i32 / 2;
@@ -96,7 +142,7 @@ struct UiState {
 }
 #[derive(Debug, Clone)]
 struct AxisChoice(usize);
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 enum Mode {
     Selecting(bool), // choosing .0 as usize
     Operating,
