@@ -23,7 +23,7 @@ fn main() -> anyhow::Result<()> {
     let texture_creator = canvas.texture_creator();
 
     let joystick = sdl.joystick()?;
-    // let _joystick = joystick.open(0)?;
+    let _joystick = joystick.open(0)?;
     let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
 
     let ttf = sdl2::ttf::init()?;
@@ -140,14 +140,16 @@ fn main() -> anyhow::Result<()> {
             canvas.set_blend_mode(BlendMode::None);
         }
 
-        for (i, manager) in managers.iter().enumerate() {
-            let center = rect_of_choice(state.selections[i]).center();
-            let theta = TAU * manager.indicator_position as f64 / 36.;
-            let length = 40.;
-            let dx = (theta.cos() * length) as i32;
-            let dy = (-theta.sin() * length) as i32;
-            canvas.set_draw_color(Color::RED);
-            canvas.draw_line(center, (center.x + dx, center.y + dy))?;
+        if let Mode::Operating = state.mode {
+            for (i, manager) in managers.iter().enumerate() {
+                let center = rect_of_choice(state.selections[i]).center();
+                let theta = TAU * manager.indicator_position as f64 / 36.;
+                let length = 40.;
+                let dx = (theta.cos() * length) as i32;
+                let dy = (-theta.sin() * length) as i32;
+                canvas.set_draw_color(Color::RED);
+                canvas.draw_line(center, (center.x + dx, center.y + dy))?;
+            }
         }
 
         canvas.present();
@@ -201,7 +203,7 @@ impl UiState {
         Self {
             axis_choices,
             selections: [(0, 0), (0, 1)],
-            mode:  Mode::Operating, // Mode::selecting(false),
+            mode: Mode::selecting(false),
             message: "".to_owned(),
         }
     }
