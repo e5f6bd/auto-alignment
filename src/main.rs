@@ -1,6 +1,3 @@
-// TODO: remove
-#![allow(unused)]
-
 use std::{f64::consts::TAU, path::PathBuf, time::Instant};
 
 use itertools::Itertools;
@@ -27,7 +24,7 @@ fn main() -> anyhow::Result<()> {
 
     let joystick = sdl.joystick()?;
     // let _joystick = joystick.open(0)?;
-    // let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
+    let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
 
     let ttf = sdl2::ttf::init()?;
     let font = ttf.load_font(config.font_path, 36)?;
@@ -71,9 +68,9 @@ fn main() -> anyhow::Result<()> {
                 Event::JoyAxisMotion {
                     axis_idx, value, ..
                 } => {
-                    // if let Some(manager) = managers.get_mut(axis_idx as usize / 2) {
-                    //     manager.update(axis_idx as usize % 2, value);
-                    // }
+                    if let Some(manager) = managers.get_mut(axis_idx as usize / 2) {
+                        manager.update(axis_idx as usize % 2, value);
+                    }
                 }
                 Event::Quit { .. } => break 'outer_loop,
                 _ => (),
@@ -100,14 +97,14 @@ fn main() -> anyhow::Result<()> {
             for (j, choice) in choices.iter().enumerate() {
                 let rect = rect_of_choice((i, j));
                 canvas.set_draw_color(Color::RGB(30, 30, 30));
-                canvas.draw_rect(rect);
+                canvas.draw_rect(rect)?;
 
                 let color = match state.mode {
                     Mode::Selecting(..) => Color::WHITE,
-                    Mode::Operating => Color::GRAY,
+                    Mode::Operating => Color::RGB(40, 40, 40),
                 };
                 let text = &texture_creator.create_texture_from_surface(
-                    font.render(&choice.0.to_string()).blended(Color::WHITE)?,
+                    font.render(&choice.0.to_string()).blended(color)?,
                 )?;
                 let dim = text.query();
                 let dst = Rect::from_center(rect.center(), dim.width, dim.height);
@@ -139,20 +136,19 @@ fn main() -> anyhow::Result<()> {
                 let d = 2;
                 Rect::new(x - d, y - d, w + d as u32 * 2, h + d as u32 * 2)
             });
-            canvas.fill_rects(&rects);
+            canvas.fill_rects(&rects)?;
             canvas.set_blend_mode(BlendMode::None);
         }
 
-        // for (i, manager) in managers.iter().enumerate() {
-        //     let x = w as i32 * (2 * i + 1) as i32 / 4;
-        //     let y = h as i32 / 2;
-        //     let theta = TAU * manager.indicator_position as f64 / 36.;
-        //     let length = 200.;
-        //     let dx = (theta.cos() * length) as i32;
-        //     let dy = (-theta.sin() * length) as i32;
-        //     canvas.set_draw_color(Color::RED);
-        //     canvas.draw_line((x, y), (x + dx, y + dy))?;
-        // }
+        for (i, manager) in managers.iter().enumerate() {
+            let center = rect_of_choice(state.selections[i]).center();
+            let theta = TAU * manager.indicator_position as f64 / 36.;
+            let length = 40.;
+            let dx = (theta.cos() * length) as i32;
+            let dy = (-theta.sin() * length) as i32;
+            canvas.set_draw_color(Color::RED);
+            canvas.draw_line(center, (center.x + dx, center.y + dy))?;
+        }
 
         canvas.present();
     }
@@ -205,7 +201,7 @@ impl UiState {
         Self {
             axis_choices,
             selections: [(0, 0), (0, 1)],
-            mode: Mode::selecting(false),
+            mode:  Mode::Operating, // Mode::selecting(false),
             message: "".to_owned(),
         }
     }
