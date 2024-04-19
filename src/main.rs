@@ -23,10 +23,14 @@ fn main() -> anyhow::Result<()> {
     let video = sdl.video()?;
     let window = video.window("PAM controller", w, h).build()?;
     let mut canvas = window.into_canvas().present_vsync().build()?;
+    let texture_creator = canvas.texture_creator();
 
     let joystick = sdl.joystick()?;
-    let _joystick = joystick.open(0)?;
+    // let _joystick = joystick.open(0)?;
     // let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
+
+    let ttf = sdl2::ttf::init()?;
+    let font = ttf.load_font(config.font_path, 36)?;
 
     let mut state = UiState::new();
 
@@ -94,8 +98,20 @@ fn main() -> anyhow::Result<()> {
 
         for (i, choices) in state.axis_choices.iter().enumerate() {
             for (j, choice) in choices.iter().enumerate() {
+                let rect = rect_of_choice((i, j));
                 canvas.set_draw_color(Color::RGB(30, 30, 30));
-                canvas.draw_rect(rect_of_choice((i, j)));
+                canvas.draw_rect(rect);
+
+                let color = match state.mode {
+                    Mode::Selecting(..) => Color::WHITE,
+                    Mode::Operating => Color::GRAY,
+                };
+                let text = &texture_creator.create_texture_from_surface(
+                    font.render(&choice.0.to_string()).blended(Color::WHITE)?,
+                )?;
+                let dim = text.query();
+                let dst = Rect::from_center(rect.center(), dim.width, dim.height);
+                canvas.copy(text, None, dst)?;
             }
         }
 
