@@ -1,16 +1,28 @@
-use std::{f64::consts::TAU, path::PathBuf, time::Instant};
+use std::{
+    cmp::Ordering,
+    f64::consts::TAU,
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use itertools::Itertools;
+use mirrormount_joystick::{Pamc112, RotationDirection::*};
 use sdl2::{event::Event, pixels::Color, rect::Rect, render::BlendMode};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Config {
     font_path: PathBuf,
+    port: String,
+    timeout: f64,
 }
 
 fn main() -> anyhow::Result<()> {
     let config: Config = toml::from_str(&fs_err::read_to_string("config.toml")?)?;
+
+    let mut controller = Pamc112::new(&config.port, Duration::from_secs_f64(config.timeout))?;
+    let mut state = UiState::new();
+    let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
 
     let sdl = sdl2::init()?;
 
@@ -24,12 +36,9 @@ fn main() -> anyhow::Result<()> {
 
     let joystick = sdl.joystick()?;
     let _joystick = joystick.open(0)?;
-    let mut managers = vec![JoystickAxisManagerWithIndicator::default(); 2];
 
     let ttf = sdl2::ttf::init()?;
     let font = ttf.load_font(config.font_path, 36)?;
-
-    let mut state = UiState::new();
 
     let mut event = sdl.event_pump()?;
 
@@ -69,7 +78,19 @@ fn main() -> anyhow::Result<()> {
                     axis_idx, value, ..
                 } => {
                     if let Some(manager) = managers.get_mut(axis_idx as usize / 2) {
-                        manager.update(axis_idx as usize % 2, value);
+                        let axis = axis_idx as usize % 2;
+                        let delta = manager.update(axis, value);
+                        let (i, j) = state.selections[axis];
+                        let channel = state.axis_choices[i][j].0 as u8;
+                        match delta.cmp(&0) {
+                            Ordering::Less => {
+                                controller.drive(channel, Cw, 10, delta.unsigned_abs())?
+                            }
+                            Ordering::Equal => {}
+                            Ordering::Greater => {
+                                controller.drive(channel, Ccw, 10, delta.unsigned_abs())?
+                            }
+                        }
                     }
                 }
                 Event::Quit { .. } => break 'outer_loop,

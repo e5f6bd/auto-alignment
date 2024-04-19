@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use anyhow::bail;
 use bstr::BStr;
 use serialport::{DataBits, Parity, SerialPort, StopBits};
@@ -7,12 +9,13 @@ pub struct Pamc112 {
 }
 
 impl Pamc112 {
-    pub fn new(port: &str) -> anyhow::Result<Self> {
+    pub fn new(port: &str, timeout: Duration) -> anyhow::Result<Self> {
         let serial = serialport::new(port, 115200)
             .data_bits(DataBits::Eight)
             .parity(Parity::None)
             .stop_bits(StopBits::One)
             .flow_control(serialport::FlowControl::None)
+            .timeout(timeout)
             .open()?;
         let mut ret = Self { serial };
         ret.check_connection()?;
@@ -44,12 +47,12 @@ impl Pamc112 {
         };
         let channel = (b'A' + channel) as char;
         self.serial
-            .write_all(format!("{direction}{frequency:04}{count:04}{channel}").as_bytes())?;
+            .write_all(format!("{direction}{frequency:04}{count:04}{channel}\r\n").as_bytes())?;
         self.read_ok()
     }
 
     fn read_ok(&mut self) -> anyhow::Result<()> {
-        let mut buf = vec![0; 256];
+        let mut buf = vec![0; 4];
         let count = self.serial.read(&mut buf)?;
         let buf = &buf[..count];
         if buf == b"OK\r\n" {
