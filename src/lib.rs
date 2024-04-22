@@ -49,8 +49,7 @@ impl Pamc112 {
         let channel = (b'A' + channel) as char;
         self.serial
             .write_all(format!("{direction}{frequency:04}{count:04}{channel}\r\n").as_bytes())?;
-        self.read_ok(b"OK\r\n")?;
-        self.read_ok(b"FIN\r\n")
+        self.read_ok(b"OK\r\n")
     }
 
     fn read_ok(&mut self, expect: &[u8]) -> anyhow::Result<()> {
@@ -59,6 +58,8 @@ impl Pamc112 {
         let buf = &buf[..count];
         if buf == expect {
             Ok(())
+        } else if buf == b"FIN\r" {
+            self.read_ok(b"\n")
         } else {
             bail!("Unexpected response: {:?}", BStr::new(buf));
         }
