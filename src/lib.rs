@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use anyhow::bail;
 use bstr::BStr;
+use clap::ValueEnum;
 use serialport::{DataBits, Parity, SerialPort, StopBits};
 
 pub struct Pamc112 {
@@ -23,8 +24,8 @@ impl Pamc112 {
     }
 
     pub fn check_connection(&mut self) -> anyhow::Result<()> {
-        self.serial.write_all(b"CON")?;
-        self.read_ok()
+        self.serial.write_all(b"CON\r\n")?;
+        self.read_ok(b"OK\r\n")
     }
 
     /// Constraints (panics otherwise)
@@ -48,14 +49,15 @@ impl Pamc112 {
         let channel = (b'A' + channel) as char;
         self.serial
             .write_all(format!("{direction}{frequency:04}{count:04}{channel}\r\n").as_bytes())?;
-        self.read_ok()
+        self.read_ok(b"OK\r\n")?;
+        self.read_ok(b"FIN\r\n")
     }
 
-    fn read_ok(&mut self) -> anyhow::Result<()> {
-        let mut buf = vec![0; 4];
+    fn read_ok(&mut self, expect: &[u8]) -> anyhow::Result<()> {
+        let mut buf = vec![0; expect.len()];
         let count = self.serial.read(&mut buf)?;
         let buf = &buf[..count];
-        if buf == b"OK\r\n" {
+        if buf == expect {
             Ok(())
         } else {
             bail!("Unexpected response: {:?}", BStr::new(buf));
@@ -63,7 +65,7 @@ impl Pamc112 {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum RotationDirection {
     /// Clockwise
     Cw,

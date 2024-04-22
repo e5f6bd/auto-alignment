@@ -77,18 +77,18 @@ fn main() -> anyhow::Result<()> {
                 Event::JoyAxisMotion {
                     axis_idx, value, ..
                 } => {
-                    if let Some(manager) = managers.get_mut(axis_idx as usize / 2) {
-                        let axis = axis_idx as usize % 2;
-                        let delta = manager.update(axis, value);
-                        let (i, j) = state.selections[axis];
+                    let choice = axis_idx as usize / 2;
+                    if let Some(manager) = managers.get_mut(choice) {
+                        let delta = manager.update(axis_idx as usize % 2, value);
+                        let (i, j) = state.selections[choice];
                         let channel = state.axis_choices[i][j].0 as u8;
                         match delta.cmp(&0) {
                             Ordering::Less => {
-                                controller.drive(channel, Cw, 10, delta.unsigned_abs())?
+                                controller.drive(channel, Cw, 1500, delta.unsigned_abs() * 100)?
                             }
                             Ordering::Equal => {}
                             Ordering::Greater => {
-                                controller.drive(channel, Ccw, 10, delta.unsigned_abs())?
+                                controller.drive(channel, Ccw, 1500, delta.unsigned_abs() * 100)?
                             }
                         }
                     }
