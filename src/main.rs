@@ -15,6 +15,8 @@ struct Config {
     font_path: PathBuf,
     port: String,
     timeout: f64,
+    tick: u16,
+    freq: u16,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -83,13 +85,19 @@ fn main() -> anyhow::Result<()> {
                         let (i, j) = state.selections[choice];
                         let channel = state.axis_choices[i][j].0 as u8;
                         match delta.cmp(&0) {
-                            Ordering::Less => {
-                                controller.drive(channel, Cw, 1500, delta.unsigned_abs() * 100)?
-                            }
+                            Ordering::Less => controller.drive(
+                                channel,
+                                Cw,
+                                config.freq,
+                                delta.unsigned_abs() * config.tick,
+                            )?,
                             Ordering::Equal => {}
-                            Ordering::Greater => {
-                                controller.drive(channel, Ccw, 1500, delta.unsigned_abs() * 100)?
-                            }
+                            Ordering::Greater => controller.drive(
+                                channel,
+                                Ccw,
+                                config.freq,
+                                delta.unsigned_abs() * config.tick,
+                            )?,
                         }
                     }
                 }
@@ -277,7 +285,9 @@ struct JoystickAxisManagerWithIndicator {
 impl JoystickAxisManagerWithIndicator {
     fn update(&mut self, axis: usize, value: i16) -> i16 {
         let delta = self.manager.update(axis, value);
-        self.indicator_position = (self.indicator_position + delta).rem_euclid(36);
+        // self.indicator_position = (self.indicator_position + delta).rem_euclid(36);
+        self.indicator_position += delta;
+        println!("{}", self.indicator_position);
         delta
     }
 }
