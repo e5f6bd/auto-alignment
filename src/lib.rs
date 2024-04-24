@@ -3,6 +3,7 @@ use std::time::Duration;
 use anyhow::bail;
 use bstr::BStr;
 use clap::ValueEnum;
+use log::info;
 use serialport::{DataBits, Parity, SerialPort, StopBits};
 
 pub struct Pamc112 {
@@ -24,7 +25,7 @@ impl Pamc112 {
     }
 
     pub fn check_connection(&mut self) -> anyhow::Result<()> {
-        self.serial.write_all(b"CON\r\n")?;
+        self.write(b"CON\r\n")?;
         self.read_ok(b"OK\r\n")
     }
 
@@ -47,9 +48,13 @@ impl Pamc112 {
             RotationDirection::Ccw => "RR",
         };
         let channel = (b'A' + channel) as char;
-        self.serial
-            .write_all(format!("{direction}{frequency:04}{count:04}{channel}\r\n").as_bytes())?;
+        self.write(format!("{direction}{frequency:04}{count:04}{channel}\r\n").as_bytes())?;
         self.read_ok(b"OK\r\n")
+    }
+
+    fn write(&mut self, contents: &[u8]) -> anyhow::Result<()> {
+        info!("Write: {:?}", BStr::new(contents));
+        Ok(self.serial.write_all(contents)?)
     }
 
     fn read_ok(&mut self, expect: &[u8]) -> anyhow::Result<()> {

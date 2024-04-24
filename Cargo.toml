@@ -2,8 +2,7 @@
 name = "mirrormount-joystick"
 version = "0.1.0"
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+default-run = "mirrormount-joystick"
 
 [dependencies]
 anyhow = "1.0.82"
@@ -11,7 +10,9 @@ bstr = "1.9.1"
 clap = { version = "4.5.4", features = ["derive"] }
 fs-err = "2.11.0"
 itertools = "0.12.1"
+log = "0.4.21"
 sdl2 = { version = "0.36.0", path = "../rust-sdl2/", features = ["no_more_string_error", "ttf"] }
 serde = { version = "1.0.198", features = ["derive"] }
 serialport = "4.3.0"
+simple_logger = "4.3.3"
 toml = "0.8.12"

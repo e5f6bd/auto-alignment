@@ -20,6 +20,7 @@ struct Config {
 }
 
 fn main() -> anyhow::Result<()> {
+    simple_logger::SimpleLogger::new().init()?;
     let config: Config = toml::from_str(&fs_err::read_to_string("config.toml")?)?;
 
     let mut controller = Pamc112::new(&config.port, Duration::from_secs_f64(config.timeout))?;
@@ -287,7 +288,7 @@ impl JoystickAxisManagerWithIndicator {
         let delta = self.manager.update(axis, value);
         // self.indicator_position = (self.indicator_position + delta).rem_euclid(36);
         self.indicator_position += delta;
-        println!("{}", self.indicator_position);
+        // println!("{}", self.indicator_position);
         delta
     }
 }
