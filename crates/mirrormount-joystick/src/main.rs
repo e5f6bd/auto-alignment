@@ -6,7 +6,7 @@ use std::{
 };
 
 use itertools::Itertools;
-use mirrormount_joystick::{Pamc112, RotationDirection::*};
+use pamc112::{Pamc112, RotationDirection::*};
 use sdl2::{event::Event, pixels::Color, rect::Rect, render::BlendMode};
 use serde::Deserialize;
 

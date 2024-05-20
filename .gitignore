@@ -1,3 +1,3 @@
 /target
 
-/config.toml
+crates/mirrormount-joystick/config.toml

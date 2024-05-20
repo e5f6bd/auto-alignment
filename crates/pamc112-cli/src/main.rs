@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use mirrormount_joystick::{Pamc112, RotationDirection};
+use pamc112::{Pamc112, RotationDirection};
 
 #[derive(Parser)]
 struct Opts {
