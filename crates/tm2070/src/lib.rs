@@ -5,7 +5,7 @@ use std::{borrow::Cow, time::Duration};
 use angle::Angle;
 use anyhow::{bail, Context};
 use bstr::{BStr, ByteSlice};
-use log::{info, warn};
+use log::{error, info, warn};
 use radians::Deg64;
 use serial_wrapper::SerialWrapper;
 use serialport::{DataBits, Parity, StopBits};
@@ -87,7 +87,7 @@ fn parse_sampling_data_1(line: &[u8]) -> anyhow::Result<SamplingData1> {
             judge,
         })
     })()
-    .with_context(|| "Failed to parse as SamplingData1: {response:?}")
+    .with_context(|| format!("Failed to parse as SamplingData1: {response:?}"))
 }
 
 impl Tm2070 {
@@ -114,15 +114,28 @@ impl Tm2070 {
 pub struct Continuous1Handle<'a>(&'a mut Tm2070);
 impl Continuous1Handle<'_> {
     pub fn iter(&self) -> impl Iterator<Item = anyhow::Result<SamplingData1>> + '_ {
-        self.0
-            .serial_wrapper
-            .read_tx
-            .try_iter()
-            .map(|line| parse_sampling_data_1(&line))
+        self.0.serial_wrapper.read_tx.try_iter().map(|line| {
+            info!("Read: {:?}", BStr::new(&line));
+            if line == b"ERR\r\n" {
+                bail!("Error response received");
+            }
+            parse_sampling_data_1(&line)
+        })
     }
 
-    pub fn close(self) -> anyhow::Result<()> {
+    pub fn close(mut self) -> anyhow::Result<()> {
+        self.close_impl()
+    }
+
+    fn close_impl(&mut self) -> anyhow::Result<()> {
         self.0.writeln(b"S")
+    }
+}
+impl Drop for Continuous1Handle<'_> {
+    fn drop(&mut self) {
+        if let Err(e) = self.close_impl() {
+            error!("Failed to close continuous fetch: {e:#}")
+        }
     }
 }
 
