@@ -1,4 +1,4 @@
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Unit {
     Min,
     Deg,
@@ -8,7 +8,7 @@ pub enum Unit {
     MinSec,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Angle {
     Min(f64),
     Deg(f64),
@@ -18,7 +18,7 @@ pub enum Angle {
     MinSec(Sign, f64, f64),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Sign {
     Positive,
     Negative,

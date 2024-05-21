@@ -47,6 +47,7 @@ impl Tm2070 {
     }
 }
 
+#[derive(Debug)]
 pub struct SamplingData1 {
     pub unit: angle::Unit,
     pub x: Option<Angle>,
@@ -188,9 +189,10 @@ fn parse_sign(word: &[u8]) -> anyhow::Result<Option<angle::Sign>> {
     })
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct TiltDirection(pub Deg64);
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Judge {
     Ok,
     Ng,

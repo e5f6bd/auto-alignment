@@ -2,10 +2,10 @@ use std::{borrow::Cow, time::Duration};
 
 use anyhow::bail;
 use bstr::BStr;
-use log::info;
-use serialport::{DataBits, Parity, StopBits};
 #[cfg(feature = "clap")]
 use clap::ValueEnum;
+use log::info;
+use serialport::{DataBits, Parity, StopBits};
 
 use serial_wrapper::SerialWrapper;
 
