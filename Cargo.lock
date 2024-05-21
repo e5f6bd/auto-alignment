@@ -391,6 +391,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "radians"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9cbdc3e524e4d0d8f8e962046fa011ab2beaba74269f8d4aa6f61dc900b22568"
+dependencies = [
+ "real_float",
+]
+
+[[package]]
+name = "real_float"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3dee308ef52b7603c018d9a0c2ff03fe65fb064bb8605a8c7ac99fb2dfb7542f"
+
+[[package]]
 name = "regex"
 version = "1.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -582,6 +597,18 @@ checksum = "3f252a68540fde3a3877aeea552b832b40ab9a69e318efd078774a01ddee1ccf"
 dependencies = [
  "num-conv",
  "time-core",
+]
+
+[[package]]
+name = "tm2070"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bstr",
+ "log",
+ "radians",
+ "serial-wrapper",
+ "serialport",
 ]
 
 [[package]]
