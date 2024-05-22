@@ -1,0 +1,11 @@
+[package]
+name = "tm2070-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+env_logger = "0.11.3"
+iced = { version = "0.12.1", features = ["canvas"] }
+log = "0.4.21"
+rand = "0.8.5"
+random = "0.14.0"
