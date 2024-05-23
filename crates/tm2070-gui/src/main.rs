@@ -301,10 +301,20 @@ impl Program<Message> for WaveformView {
                     }
                 }
 
+                let count = bounds.width as f64 / 0.5;
+                let left = 0f64.max(self.points.len() as f64 - count);
+                let right = left + count;
+                let to = 0. ..bounds.width as f64;
+                let to_x = |i: usize| linear_map(i as f64, left..right, to.clone()) as f32;
+
                 // Plot
                 let path = Path::new(|builder| {
+                    // float -> int is saturating cast, so this never panics
+                    let (left, right) = (left as usize, (right as usize).min(self.points.len()));
                     let mut points = (self.points.iter().enumerate())
-                        .map(|(i, &point)| Point::new(i as f32 / 2., to_y(point)));
+                        .skip(left)
+                        .take(right - left)
+                        .map(|(i, &point)| Point::new(to_x(i), to_y(point)));
                     if let Some(point) = points.by_ref().next() {
                         builder.move_to(point);
                     };
