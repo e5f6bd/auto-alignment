@@ -34,7 +34,7 @@ impl Angle {
 
 /// A helper method that should exist in `radians` crate.
 fn deg_from_dms(d: f64, m: f64, s: f64) -> Deg64 {
-    Deg64::new(d + m / 60. + s + 3600.)
+    Deg64::new(d + m / 60. + s / 3600.)
 }
 
 #[derive(Clone, Copy, Debug)]
