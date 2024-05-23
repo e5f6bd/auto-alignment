@@ -12,7 +12,7 @@ use iced::{
     window, Application, Color, Command, Event, Font, Length, Point, Rectangle, Renderer, Settings,
     Subscription, Theme,
 };
-use itertools::chain;
+use itertools::{chain, zip_eq};
 use log::error;
 use tm2070::Tm2070;
 use tokio::{select, sync::mpsc::UnboundedSender};
@@ -33,8 +33,8 @@ struct App {
     com_port: String,
     connection_status: ConnectionStatus,
 
-    points: Vec<f64>,
-    waveform_frame_cache: Cache,
+    waveform_x: WaveformView,
+    waveform_y: WaveformView,
 
     status_message: String,
 }
@@ -95,9 +95,11 @@ impl Application for App {
                     log::error!("{}", self.status_message);
                 }
             }
-            Message::DataPoint(point) => {
-                self.points.push(point);
-                self.waveform_frame_cache.clear();
+            Message::DataPoint(x, y) => {
+                for (waveform, x) in zip_eq([&mut self.waveform_x, &mut self.waveform_y], [x, y]) {
+                    waveform.points.push(x);
+                    waveform.waveform_frame_cache.clear();
+                }
             }
             Message::ComPortInput(input) => self.com_port = input,
             Message::Connect => {
@@ -119,7 +121,12 @@ impl Application for App {
     }
 
     fn view(&self) -> iced::Element<Message> {
-        let canvas = Canvas::new(self).width(Length::Fill).height(Length::Fill);
+        let canvas_x = Canvas::new(&self.waveform_x)
+            .width(Length::Fill)
+            .height(Length::Fill);
+        let canvas_y = Canvas::new(&self.waveform_y)
+            .width(Length::Fill)
+            .height(Length::Fill);
 
         let config_line = {
             let com_port_label = text("COM port:");
@@ -143,7 +150,7 @@ impl Application for App {
         let status_line = text(&self.status_message);
         // .font(FONT)
 
-        column![canvas, config_line, status_line].into()
+        column![canvas_x, canvas_y, config_line, status_line].into()
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
@@ -182,8 +189,9 @@ async fn tm2070_worker(tx: &mut Sender<Message>, com_port: String) -> anyhow::Re
     tx.send(Message::ConnectionEstablished(main_tx)).await?;
     loop {
         if let Some(event) = handle.recv()? {
-            if let Some(x) = event.x {
-                tx.send(Message::DataPoint(x.value().val())).await?;
+            if let (Some(x), Some(y)) = (event.x, event.y) {
+                tx.send(Message::DataPoint(x.value().val(), y.value().val()))
+                    .await?;
             }
         }
         let sleep = tokio::time::sleep(Duration::from_secs_f64(1. / 120.));
@@ -195,7 +203,13 @@ async fn tm2070_worker(tx: &mut Sender<Message>, com_port: String) -> anyhow::Re
     pending().await
 }
 
-impl Program<Message> for App {
+#[derive(Default)]
+struct WaveformView {
+    points: Vec<f64>,
+    waveform_frame_cache: Cache,
+}
+
+impl Program<Message> for WaveformView {
     type State = ();
 
     fn draw(
@@ -210,13 +224,13 @@ impl Program<Message> for App {
             .waveform_frame_cache
             .draw(renderer, bounds.size(), |frame| {
                 // Background
-                frame.fill_rectangle(bounds.position(), bounds.size(), Color::BLACK);
+                frame.fill_rectangle(Point::ORIGIN, bounds.size(), Color::BLACK);
 
                 let path = Path::new(|builder| {
                     let mut points = (self.points.iter().enumerate()).map(|(i, &point)| {
                         let from = self.points.iter().fold(f64::INFINITY, |x, &y| x.min(y))
                             ..self.points.iter().fold(f64::NEG_INFINITY, |x, &y| x.max(y));
-                        let to = bounds.y as f64..(bounds.y + bounds.height) as f64;
+                        let to = 0. ..bounds.height as f64;
                         Point::new(i as f32 / 2., linear_map(point, from, to) as _)
                     });
                     if let Some(point) = points.by_ref().next() {
@@ -250,5 +264,5 @@ enum Message {
     Connect,
     ConnectionEstablished(UnboundedSender<()>),
     ConnectionLost(Option<String>),
-    DataPoint(f64),
+    DataPoint(f64, f64),
 }
