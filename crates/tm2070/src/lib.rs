@@ -1,6 +1,6 @@
 pub mod angle;
 
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, sync::mpsc::TryRecvError, time::Duration};
 
 use angle::Angle;
 use anyhow::{bail, Context};
@@ -39,12 +39,17 @@ impl Tm2070 {
     fn read(&mut self) -> anyhow::Result<Vec<u8>> {
         // Blocking read
         let read = self.serial_wrapper.read_tx.recv()?;
-        info!("Read: {:?}", BStr::new(&read));
-        if read == b"ERR\r\n" {
-            bail!("Error response received");
-        }
+        read_preprocess(&read)?;
         Ok(read)
     }
+}
+
+fn read_preprocess(read: &[u8]) -> anyhow::Result<()> {
+    info!("Read: {:?}", BStr::new(&read));
+    if read == b"ERR\r\n" {
+        bail!("Error response received");
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -113,12 +118,22 @@ impl Tm2070 {
 
 pub struct Continuous1Handle<'a>(&'a mut Tm2070);
 impl Continuous1Handle<'_> {
+    /// Non-blocking
+    pub fn recv(&self) -> anyhow::Result<Option<SamplingData1>> {
+        match self.0.serial_wrapper.read_tx.try_recv() {
+            Ok(line) => {
+                read_preprocess(&line)?;
+                Ok(Some(parse_sampling_data_1(&line)?))
+            }
+            Err(TryRecvError::Empty) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
+    }
+
+    /// Non-blocking
     pub fn iter(&self) -> impl Iterator<Item = anyhow::Result<SamplingData1>> + '_ {
         self.0.serial_wrapper.read_tx.try_iter().map(|line| {
-            info!("Read: {:?}", BStr::new(&line));
-            if line == b"ERR\r\n" {
-                bail!("Error response received");
-            }
+            read_preprocess(&line)?;
             parse_sampling_data_1(&line)
         })
     }
