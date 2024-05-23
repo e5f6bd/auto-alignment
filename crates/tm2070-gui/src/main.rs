@@ -2,18 +2,19 @@ use std::{any::TypeId, convert::Infallible, future::pending, ops::Range, time::D
 
 use anyhow::Context;
 use iced::{
-    event, font,
+    alignment, event, font,
     futures::{channel::mpsc::Sender, SinkExt},
     widget::{
         button,
-        canvas::{Cache, Geometry, Path, Program, Stroke},
-        column, row, text, text_input, Canvas,
+        canvas::{Cache, Geometry, Path, Program, Stroke, Text},
+        column, row, text, text_input, Canvas, Space,
     },
     window, Application, Color, Command, Event, Font, Length, Point, Rectangle, Renderer, Settings,
     Subscription, Theme,
 };
-use itertools::{chain, zip_eq};
+use itertools::{chain, iterate, zip_eq};
 use log::error;
+use ordered_float::OrderedFloat;
 use tm2070::Tm2070;
 use tokio::{select, sync::mpsc::UnboundedSender};
 
@@ -148,9 +149,18 @@ impl Application for App {
         };
 
         let status_line = text(&self.status_message);
-        // .font(FONT)
 
-        column![canvas_x, canvas_y, config_line, status_line].into()
+        let space = || Space::with_height(10);
+
+        column![
+            canvas_x,
+            space(),
+            canvas_y,
+            space(),
+            config_line,
+            status_line
+        ]
+        .into()
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
@@ -226,13 +236,75 @@ impl Program<Message> for WaveformView {
                 // Background
                 frame.fill_rectangle(Point::ORIGIN, bounds.size(), Color::BLACK);
 
+                let points = || self.points.iter().copied().map(OrderedFloat::from);
+                let from = match (points().min()).zip(points().max()) {
+                    None => -1. ..1.,
+                    Some((min, max)) => {
+                        let (min, max) = (min.into_inner(), max.into_inner());
+                        if max - min > 2e-8 {
+                            min..max
+                        } else {
+                            min - 1e-8..max + 1e-8
+                        }
+                    }
+                };
+                let to = bounds.height as f64..0.;
+                let to_y = |a| linear_map(a, from.clone(), to.clone()) as f32;
+
+                // Grid, vertical axis
+                {
+                    let range = from.end - from.start;
+                    let d_main = grid_size(range, bounds.height as f64, 100.);
+                    let d_sub = grid_size(range, bounds.height as f64, 10.);
+                    let d_sub = d_sub
+                        / if (d_sub / d_main).fract() > 0.3 {
+                            2.
+                        } else {
+                            1.
+                        };
+
+                    let precision = {
+                        let smallest_place = (d_main.log10() + 1e-5).floor() as isize;
+                        (-smallest_place).max(0) as usize
+                    };
+
+                    let iterate_a = |d: f64| {
+                        let start = (from.end / d).floor() * d;
+                        iterate(start, move |x| x - d).take_while(|&a| a >= from.start)
+                    };
+
+                    for a in iterate_a(d_sub) {
+                        let y = to_y(a);
+                        let gray = 0.1;
+                        frame.stroke(
+                            &Path::line(Point::new(0., y), Point::new(bounds.width, y)),
+                            Stroke::default().with_color(Color::from_rgb(gray, gray, gray)),
+                        );
+                    }
+
+                    for a in iterate_a(d_main) {
+                        let y = to_y(a);
+                        let gray = 0.3;
+                        frame.stroke(
+                            &Path::line(Point::new(0., y), Point::new(bounds.width, y)),
+                            Stroke::default().with_color(Color::from_rgb(gray, gray, gray)),
+                        );
+                        frame.fill_text(Text {
+                            color: Color::WHITE,
+                            size: 14.0.into(),
+                            position: Point::new(10., y - 3.),
+                            horizontal_alignment: alignment::Horizontal::Left,
+                            vertical_alignment: alignment::Vertical::Bottom,
+                            content: format!("{a:.precision$}"),
+                            ..Text::default()
+                        });
+                    }
+                }
+
+                // Plot
                 let path = Path::new(|builder| {
-                    let mut points = (self.points.iter().enumerate()).map(|(i, &point)| {
-                        let from = self.points.iter().fold(f64::INFINITY, |x, &y| x.min(y))
-                            ..self.points.iter().fold(f64::NEG_INFINITY, |x, &y| x.max(y));
-                        let to = 0. ..bounds.height as f64;
-                        Point::new(i as f32 / 2., linear_map(point, from, to) as _)
-                    });
+                    let mut points = (self.points.iter().enumerate())
+                        .map(|(i, &point)| Point::new(i as f32 / 2., to_y(point)));
                     if let Some(point) = points.by_ref().next() {
                         builder.move_to(point);
                     };
@@ -242,11 +314,36 @@ impl Program<Message> for WaveformView {
                 });
                 frame.stroke(
                     &path,
-                    Stroke::default().with_color(Color::from_rgba(1., 1., 1., 0.5)),
+                    Stroke::default().with_color(Color::from_rgba(1., 0.8, 0., 0.5)),
                 );
             });
         vec![geometry]
     }
+}
+
+fn grid_size(range: f64, height: f64, h: f64) -> f64 {
+    // Sub grid height should be [h, h * 3), where h = 50 (heuristic)
+    // Let grid step be d, then (height * d / range) in [h, h * 3)
+    // d >= h * range / height =: k
+    // d = {1, 2, 5\} * 10^n
+    // 10^[log10(k)] * {1, 2, 5\}
+    // 10^[log10(k) + 1] >= k
+    let d1 = {
+        let d_min = h * range / height;
+        let pow10 = 10f64.powf(d_min.log10().floor());
+        let ws = [1., 2., 5., 10., 20., 50.].into_iter();
+        ws.map(|w| w * pow10).find(|&d| d >= d_min).unwrap()
+    };
+    // Also, there should be at least two gridlines.
+    // range / d >= 3.
+    // d <= range / 3.
+    let d2 = {
+        let d_max = range / 2.2;
+        let pow10 = 10f64.powf(d_max.log10().floor() - 1.);
+        let ws = [1., 2., 5., 10., 20., 50.].into_iter().rev();
+        ws.map(|w| w * pow10).find(|&d| d <= d_max).unwrap()
+    };
+    d1.min(d2)
 }
 
 fn linear_map(x: f64, from: Range<f64>, to: Range<f64>) -> f64 {
