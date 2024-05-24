@@ -8,13 +8,13 @@ use iced::{
     mouse,
     widget::{
         button,
-        canvas::{self, Cache, Geometry, Path, Program, Stroke, Text},
+        canvas::{self, Cache, Frame, Geometry, Path, Program, Stroke, Text},
         column, row, slider, text, text_input, Canvas, Space,
     },
     window, Application, Color, Command, Event, Font, Length, Point, Rectangle, Renderer, Settings,
-    Subscription, Theme,
+    Size, Subscription, Theme, Vector,
 };
-use itertools::{chain, iterate, zip_eq};
+use itertools::{chain, iterate, zip_eq, Itertools};
 use log::error;
 use ordered_float::OrderedFloat;
 use tm2070::Tm2070;
@@ -476,35 +476,39 @@ impl Program<Message> for WaveformViewParam<'_> {
                     x_range.start as usize,
                     (x_range.end as usize).min(self.view.points.len()),
                 );
+                let show_rects = bounds.width as f64 / self.horizontal.window > 5.;
+
                 // Plot
-                let path = path_from_iter(
-                    (self.view.points.iter().enumerate())
-                        .skip(left)
-                        .take(right - left)
-                        .map(|(i, &point)| Point::new(to_x(i as f64), to_y(point))),
-                );
+                let points =
+                    (left..right).map(|i| Point::new(to_x(i as f64), to_y(self.view.points[i])));
                 frame.stroke(
-                    &path,
+                    &path_from_iter(points.clone()),
                     Stroke::default().with_color(Color::from_rgba(0., 1., 0., 0.2)),
                 );
+                if show_rects {
+                    draw_points(frame, points, Color::from_rgba(0., 1., 0., 0.2));
+                }
 
                 // Average plot
-                let path = path_from_iter(
-                    (left..right)
-                        .filter_map(|i| {
-                            let a = self.average_count;
-                            let s = i.checked_sub(a / 2)?;
-                            let t = i + a - a / 2;
-                            let cum = &self.view.cumulative_sum;
-                            let average = (cum.get(t)? - cum.get(s)?) / a as f64;
-                            Some((i, average))
-                        })
-                        .map(|(i, point)| Point::new(to_x(i as f64), to_y(point))),
-                );
+                // This involves computation, so we are creating result in vec
+                let points = (left..right)
+                    .filter_map(|i| {
+                        let a = self.average_count;
+                        let s = i.checked_sub(a / 2)?;
+                        let t = i + a - a / 2;
+                        let cum = &self.view.cumulative_sum;
+                        let average = (cum.get(t)? - cum.get(s)?) / a as f64;
+                        Some((i, average))
+                    })
+                    .map(|(i, point)| Point::new(to_x(i as f64), to_y(point)))
+                    .collect_vec();
                 frame.stroke(
-                    &path,
+                    &path_from_iter(points.iter().copied()),
                     Stroke::default().with_color(Color::from_rgba(1., 0.8, 0., 1.)),
                 );
+                if show_rects {
+                    draw_points(frame, points, Color::from_rgba(1., 0.8, 0., 0.5));
+                }
             });
         vec![geometry]
     }
@@ -630,7 +634,8 @@ fn linear_map(x: f64, from: Range<f64>, to: Range<f64>) -> f64 {
     to.start + (x - from.start) / (from.end - from.start) * (to.end - to.start)
 }
 
-fn path_from_iter(mut points: impl Iterator<Item = Point>) -> Path {
+fn path_from_iter(points: impl IntoIterator<Item = Point>) -> Path {
+    let mut points = points.into_iter();
     Path::new(|builder| {
         if let Some(point) = points.by_ref().next() {
             builder.move_to(point);
@@ -639,6 +644,17 @@ fn path_from_iter(mut points: impl Iterator<Item = Point>) -> Path {
             builder.line_to(point);
         }
     })
+}
+
+fn draw_points(frame: &mut Frame, points: impl IntoIterator<Item = Point>, color: Color) {
+    for point in points {
+        let size = 4.;
+        frame.fill_rectangle(
+            point - Vector::new(size, size) * 0.5,
+            Size::new(size, size),
+            color,
+        );
+    }
 }
 
 #[derive(Clone, Debug)]
