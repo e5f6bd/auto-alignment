@@ -4,9 +4,10 @@ use anyhow::Context;
 use iced::{
     alignment, event, font,
     futures::{channel::mpsc::Sender, SinkExt},
+    mouse,
     widget::{
         button,
-        canvas::{Cache, Geometry, Path, Program, Stroke, Text},
+        canvas::{self, Cache, Geometry, Path, Program, Stroke, Text},
         column, row, text, text_input, Canvas, Space,
     },
     window, Application, Color, Command, Event, Font, Length, Point, Rectangle, Renderer, Settings,
@@ -36,9 +37,11 @@ struct App {
 
     waveform_x: WaveformView,
     waveform_y: WaveformView,
+    horizontal: WaveformHorizontalScale,
 
     status_message: String,
 }
+
 enum ConnectionStatus {
     Disconnected,
     Connecting,
@@ -117,17 +120,29 @@ impl Application for App {
                     self.status_message = message;
                 }
             }
+            Message::WaveformScrolled(axis, position) => match axis {
+                WaveformViewAxis::X => self.horizontal.position = position,
+                WaveformViewAxis::Y => self.horizontal.position = position,
+            },
         }
         Command::none()
     }
 
     fn view(&self) -> iced::Element<Message> {
-        let canvas_x = Canvas::new(&self.waveform_x)
-            .width(Length::Fill)
-            .height(Length::Fill);
-        let canvas_y = Canvas::new(&self.waveform_y)
-            .width(Length::Fill)
-            .height(Length::Fill);
+        let canvas_x = Canvas::new(WaveformViewParam {
+            view: &self.waveform_x,
+            horizontal: self.horizontal,
+            axis: WaveformViewAxis::X,
+        })
+        .width(Length::Fill)
+        .height(Length::Fill);
+        let canvas_y = Canvas::new(WaveformViewParam {
+            view: &self.waveform_y,
+            horizontal: self.horizontal,
+            axis: WaveformViewAxis::Y,
+        })
+        .width(Length::Fill)
+        .height(Length::Fill);
 
         let config_line = {
             let com_port_label = text("COM port:");
@@ -213,13 +228,45 @@ async fn tm2070_worker(tx: &mut Sender<Message>, com_port: String) -> anyhow::Re
     pending().await
 }
 
+struct WaveformViewParam<'a> {
+    axis: WaveformViewAxis,
+    view: &'a WaveformView,
+    horizontal: WaveformHorizontalScale,
+}
+#[derive(Clone, Copy, Debug)]
+enum WaveformViewAxis {
+    X,
+    Y,
+}
+
+#[derive(Clone, Copy)]
+struct WaveformHorizontalScale {
+    // Horizontal scale: (position, scale)
+    position: WaveformPosition,
+    // datapoints per full width
+    scale: f64,
+}
+impl Default for WaveformHorizontalScale {
+    fn default() -> Self {
+        Self {
+            position: WaveformPosition::Rightmost,
+            scale: 600., // 10 seconds to fill
+        }
+    }
+}
+
 #[derive(Default)]
 struct WaveformView {
     points: Vec<f64>,
     waveform_frame_cache: Cache,
 }
+#[derive(Clone, Copy, Debug)]
+enum WaveformPosition {
+    Rightmost,
+    Custom(f64),
+}
 
-impl Program<Message> for WaveformView {
+impl Program<Message> for WaveformViewParam<'_> {
     type State = ();
 
     fn draw(
@@ -231,12 +278,13 @@ impl Program<Message> for WaveformView {
         _cursor: iced::mouse::Cursor,
     ) -> Vec<Geometry> {
         let geometry = self
+            .view
             .waveform_frame_cache
             .draw(renderer, bounds.size(), |frame| {
                 // Background
                 frame.fill_rectangle(Point::ORIGIN, bounds.size(), Color::BLACK);
 
-                let points = || self.points.iter().copied().map(OrderedFloat::from);
+                let points = || self.view.points.iter().copied().map(OrderedFloat::from);
                 let from = match (points().min()).zip(points().max()) {
                     None => -1. ..1.,
                     Some((min, max)) => {
@@ -301,17 +349,17 @@ impl Program<Message> for WaveformView {
                     }
                 }
 
-                let count = bounds.width as f64 / 0.5;
-                let left = 0f64.max(self.points.len() as f64 - count);
-                let right = left + count;
+                let left = self.leftmost_datapoint();
+                let right = left + self.horizontal.scale;
                 let to = 0. ..bounds.width as f64;
                 let to_x = |i: usize| linear_map(i as f64, left..right, to.clone()) as f32;
 
                 // Plot
                 let path = Path::new(|builder| {
                     // float -> int is saturating cast, so this never panics
-                    let (left, right) = (left as usize, (right as usize).min(self.points.len()));
-                    let mut points = (self.points.iter().enumerate())
+                    let (left, right) =
+                        (left as usize, (right as usize).min(self.view.points.len()));
+                    let mut points = (self.view.points.iter().enumerate())
                         .skip(left)
                         .take(right - left)
                         .map(|(i, &point)| Point::new(to_x(i), to_y(point)));
@@ -329,14 +377,66 @@ impl Program<Message> for WaveformView {
             });
         vec![geometry]
     }
+
+    fn update(
+        &self,
+        _state: &mut Self::State,
+        event: canvas::Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> (canvas::event::Status, Option<Message>) {
+        if cursor.position_in(bounds).is_some() {
+            if let canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) = event {
+                let (x, _y) = match delta {
+                    mouse::ScrollDelta::Lines { x, y } => {
+                        let line_to_pixel = 100.;
+                        (x * line_to_pixel, y * line_to_pixel)
+                    }
+                    mouse::ScrollDelta::Pixels { x, y } => (x, y),
+                };
+                // Scroll occurs only when
+                let left_for_rightmost = self.left_for_rightmost();
+                if self.left_for_rightmost() > 0. {
+                    // Scroll delta on datapoint scale
+                    let delta_x = x as f64 * self.horizontal.scale / bounds.width as f64;
+                    let new_left = self.leftmost_datapoint() - delta_x;
+                    let new_position = if left_for_rightmost < new_left {
+                        WaveformPosition::Rightmost
+                    } else {
+                        WaveformPosition::Custom(0f64.max(new_left))
+                    };
+                    return (
+                        canvas::event::Status::Captured,
+                        Some(Message::WaveformScrolled(self.axis, new_position)),
+                    );
+                }
+            }
+        }
+        (canvas::event::Status::Ignored, None)
+    }
+}
+
+impl WaveformViewParam<'_> {
+    fn leftmost_datapoint(&self) -> f64 {
+        match self.horizontal.position {
+            WaveformPosition::Rightmost => 0f64.max(self.left_for_rightmost()),
+            WaveformPosition::Custom(left) => left,
+        }
+    }
+
+    // If this value < 0, it means the data point count is fewer than scale.
+    // In that case, the plot should be right-aligned.
+    fn left_for_rightmost(&self) -> f64 {
+        self.view.points.len() as f64 - self.horizontal.scale
+    }
 }
 
 fn grid_size(range: f64, height: f64, h: f64) -> f64 {
     // Sub grid height should be [h, h * 3), where h = 50 (heuristic)
     // Let grid step be d, then (height * d / range) in [h, h * 3)
     // d >= h * range / height =: k
-    // d = {1, 2, 5\} * 10^n
-    // 10^[log10(k)] * {1, 2, 5\}
+    // d = {1, 2, 5} * 10^n
+    // 10^[log10(k)] * {1, 2, 5}
     // 10^[log10(k) + 1] >= k
     let d1 = {
         let d_min = h * range / height;
@@ -371,5 +471,8 @@ enum Message {
     Connect,
     ConnectionEstablished(UnboundedSender<()>),
     ConnectionLost(Option<String>),
+
+    WaveformScrolled(WaveformViewAxis, WaveformPosition),
+
     DataPoint(f64, f64),
 }
