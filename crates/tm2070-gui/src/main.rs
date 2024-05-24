@@ -308,7 +308,7 @@ impl Program<Message> for WaveformViewParam<'_> {
                 let (y_range, to_y) = {
                     let points = || self.view.points.iter().copied().map(OrderedFloat::from);
                     let from = match (points().min()).zip(points().max()) {
-                        None => -1. ..1.,
+                        None => -1e-6 ..1e-6,
                         Some((min, max)) => {
                             let (min, max) = (min.into_inner(), max.into_inner());
                             if max - min > 2e-8 {
@@ -385,6 +385,11 @@ impl Program<Message> for WaveformViewParam<'_> {
                         let smallest_place = (d_main.log10() + 1e-5).floor() as isize;
                         (-smallest_place).max(0) as usize
                     };
+                    let (exponent, unit) = match precision {
+                        6.. => (6, "μrad"),
+                        3.. => (3, "mrad"),
+                        0.. => (0, "rad"),
+                    };
 
                     let iterate_a = |d: f64| iterate_range(d, y_range.clone());
 
@@ -410,7 +415,11 @@ impl Program<Message> for WaveformViewParam<'_> {
                             position: Point::new(10., y - 3.),
                             horizontal_alignment: alignment::Horizontal::Left,
                             vertical_alignment: alignment::Vertical::Bottom,
-                            content: format!("{a:.precision$}"),
+                            content: format!(
+                                "{:.precision$} {unit}",
+                                a * 10f64.powi(exponent as _),
+                                precision = precision - exponent,
+                            ),
                             ..Text::default()
                         });
                     }
