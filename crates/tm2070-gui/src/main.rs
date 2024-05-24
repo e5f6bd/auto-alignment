@@ -474,8 +474,9 @@ impl Program<Message> for WaveformViewParam<'_> {
                 // float -> int is saturating cast, so this never panics
                 let (left, right) = (
                     x_range.start as usize,
-                    (x_range.end as usize).min(self.view.points.len()),
+                    (x_range.end as usize).min(self.num_points()),
                 );
+                let (left, right) = (left.saturating_sub(3), (right + 3).min(self.num_points()));
                 let show_rects = bounds.width as f64 / self.horizontal.window > 5.;
 
                 // Plot
@@ -543,7 +544,7 @@ impl Program<Message> for WaveformViewParam<'_> {
                         let scale = 1.001f64.powf(-y as f64);
                         let new_left = mid - (mid - left) * scale;
                         let new_window = self.horizontal.window * scale;
-                        let len = self.view.points.len() as f64;
+                        let len = self.num_points() as f64;
                         let new_position = if len < new_window || len < new_left + new_window {
                             WaveformPosition::Rightmost
                         } else {
@@ -591,7 +592,11 @@ impl WaveformViewParam<'_> {
     // If this value < 0, it means the data point count is fewer than window.
     // In that case, the plot should be right-aligned.
     fn left_for_rightmost(&self) -> f64 {
-        self.view.points.len() as f64 - self.horizontal.window
+        self.num_points() as f64 - self.horizontal.window
+    }
+
+    fn num_points(&self) -> usize {
+        self.view.points.len()
     }
 }
 
