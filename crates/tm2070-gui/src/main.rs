@@ -351,8 +351,19 @@ impl Program<Message> for WaveformViewParam<'_> {
                     (left..right, to_x)
                 };
 
+                // Range of data indices that should be displayed.
+                let (left, right) = (
+                    // float -> int is saturating cast, so this never panics
+                    x_range.start as usize,
+                    (x_range.end as usize).min(self.num_points()),
+                );
+                let (left, right) = (left.saturating_sub(3), (right + 3).min(self.num_points()));
+
                 let (y_range, to_y) = {
-                    let points = || self.view.points.iter().copied().map(OrderedFloat::from);
+                    let points = || {
+                        let points = &self.view.points[left..right];
+                        points.iter().copied().map(OrderedFloat::from)
+                    };
                     let from = match (points().min()).zip(points().max()) {
                         None => -1e-6..1e-6,
                         Some((min, max)) => {
@@ -364,7 +375,14 @@ impl Program<Message> for WaveformViewParam<'_> {
                             }
                         }
                     };
-                    let to = bounds.height as f64..0.;
+                    let to = {
+                        let h = bounds.height as f64;
+                        if h > 30. {
+                            (h - 10.)..10.
+                        } else {
+                            (h * 2. / 3.)..h / 3.
+                        }
+                    };
                     let to_y = {
                         let from = from.clone();
                         let to = to.clone();
@@ -471,12 +489,6 @@ impl Program<Message> for WaveformViewParam<'_> {
                     }
                 }
 
-                // float -> int is saturating cast, so this never panics
-                let (left, right) = (
-                    x_range.start as usize,
-                    (x_range.end as usize).min(self.num_points()),
-                );
-                let (left, right) = (left.saturating_sub(3), (right + 3).min(self.num_points()));
                 let show_rects = bounds.width as f64 / self.horizontal.window > 5.;
 
                 // Plot
