@@ -9,7 +9,7 @@ use iced::{
     widget::{
         button,
         canvas::{self, Cache, Geometry, Path, Program, Stroke, Text},
-        column, row, text, text_input, Canvas, Space,
+        column, row, slider, text, text_input, Canvas, Space,
     },
     window, Application, Color, Command, Event, Font, Length, Point, Rectangle, Renderer, Settings,
     Subscription, Theme,
@@ -31,18 +31,33 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Default)]
 struct App {
     modifiers: Modifiers,
 
     com_port: String,
     connection_status: ConnectionStatus,
 
+    average_count: usize,
+
     waveform_x: WaveformView,
     waveform_y: WaveformView,
     horizontal: WaveformHorizontalScale,
 
     status_message: String,
+}
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            modifiers: Default::default(),
+            com_port: Default::default(),
+            connection_status: Default::default(),
+            average_count: 1,
+            waveform_x: Default::default(),
+            waveform_y: Default::default(),
+            horizontal: Default::default(),
+            status_message: Default::default(),
+        }
+    }
 }
 
 enum ConnectionStatus {
@@ -109,6 +124,9 @@ impl Application for App {
             Message::DataPoint(x, y) => {
                 for (waveform, x) in zip_eq([&mut self.waveform_x, &mut self.waveform_y], [x, y]) {
                     waveform.points.push(x);
+                    waveform
+                        .cumulative_sum
+                        .push(waveform.cumulative_sum.last().unwrap() + x);
                     waveform.waveform_frame_cache.clear();
                 }
             }
@@ -134,6 +152,7 @@ impl Application for App {
                     w.waveform_frame_cache.clear();
                 }
             }
+            Message::SetAverageCount(count) => self.average_count = count,
         }
         Command::none()
     }
@@ -144,6 +163,7 @@ impl Application for App {
             view: &self.waveform_x,
             horizontal: self.horizontal,
             axis: WaveformViewAxis::X,
+            average_count: self.average_count,
         })
         .width(Length::Fill)
         .height(Length::Fill);
@@ -152,6 +172,7 @@ impl Application for App {
             view: &self.waveform_y,
             horizontal: self.horizontal,
             axis: WaveformViewAxis::Y,
+            average_count: self.average_count,
         })
         .width(Length::Fill)
         .height(Length::Fill);
@@ -169,10 +190,22 @@ impl Application for App {
             };
             let connect =
                 button("Connect").on_press_maybe(disconnected.then_some(Message::Connect));
-            row![com_port_label, com_port, connect]
-                .align_items(iced::Alignment::Center)
-                .padding(5)
-                .spacing(10)
+
+            let average_label = text(format!("Average: {}", self.average_count));
+            let average_slider = slider(1. ..=60.001, self.average_count as f64, |a| {
+                Message::SetAverageCount(a as usize)
+            });
+
+            row![
+                com_port_label,
+                com_port,
+                connect,
+                average_label,
+                average_slider,
+            ]
+            .align_items(iced::Alignment::Center)
+            .padding(5)
+            .spacing(10)
         };
 
         let status_line = text(&self.status_message);
@@ -246,6 +279,7 @@ struct WaveformViewParam<'a> {
     axis: WaveformViewAxis,
     view: &'a WaveformView,
     horizontal: WaveformHorizontalScale,
+    average_count: usize,
 }
 #[derive(Clone, Copy, Debug)]
 enum WaveformViewAxis {
@@ -268,10 +302,22 @@ impl Default for WaveformHorizontalScale {
     }
 }
 
-#[derive(Default)]
 struct WaveformView {
     points: Vec<f64>,
+    // f64 has 14-digit precision,
+    // and the range of auto collimator is ~2e4 radians.
+    // this allows ~2.6 years of measurement without losing precision.
+    cumulative_sum: Vec<f64>,
     waveform_frame_cache: Cache,
+}
+impl Default for WaveformView {
+    fn default() -> Self {
+        Self {
+            points: Default::default(),
+            cumulative_sum: vec![0.],
+            waveform_frame_cache: Default::default(),
+        }
+    }
 }
 #[derive(Clone, Copy, Debug)]
 enum WaveformPosition {
@@ -308,7 +354,7 @@ impl Program<Message> for WaveformViewParam<'_> {
                 let (y_range, to_y) = {
                     let points = || self.view.points.iter().copied().map(OrderedFloat::from);
                     let from = match (points().min()).zip(points().max()) {
-                        None => -1e-6 ..1e-6,
+                        None => -1e-6..1e-6,
                         Some((min, max)) => {
                             let (min, max) = (min.into_inner(), max.into_inner());
                             if max - min > 2e-8 {
@@ -425,27 +471,39 @@ impl Program<Message> for WaveformViewParam<'_> {
                     }
                 }
 
+                // float -> int is saturating cast, so this never panics
+                let (left, right) = (
+                    x_range.start as usize,
+                    (x_range.end as usize).min(self.view.points.len()),
+                );
                 // Plot
-                let path = Path::new(|builder| {
-                    // float -> int is saturating cast, so this never panics
-                    let (left, right) = (
-                        x_range.start as usize,
-                        (x_range.end as usize).min(self.view.points.len()),
-                    );
-                    let mut points = (self.view.points.iter().enumerate())
+                let path = path_from_iter(
+                    (self.view.points.iter().enumerate())
                         .skip(left)
                         .take(right - left)
-                        .map(|(i, &point)| Point::new(to_x(i as f64), to_y(point)));
-                    if let Some(point) = points.by_ref().next() {
-                        builder.move_to(point);
-                    };
-                    for point in points {
-                        builder.line_to(point);
-                    }
-                });
+                        .map(|(i, &point)| Point::new(to_x(i as f64), to_y(point))),
+                );
                 frame.stroke(
                     &path,
-                    Stroke::default().with_color(Color::from_rgba(1., 0.8, 0., 0.5)),
+                    Stroke::default().with_color(Color::from_rgba(0., 1., 0., 0.2)),
+                );
+
+                // Average plot
+                let path = path_from_iter(
+                    (left..right)
+                        .filter_map(|i| {
+                            let a = self.average_count;
+                            let s = i.checked_sub(a / 2)?;
+                            let t = i + a - a / 2;
+                            let cum = &self.view.cumulative_sum;
+                            let average = (cum.get(t)? - cum.get(s)?) / a as f64;
+                            Some((i, average))
+                        })
+                        .map(|(i, point)| Point::new(to_x(i as f64), to_y(point))),
+                );
+                frame.stroke(
+                    &path,
+                    Stroke::default().with_color(Color::from_rgba(1., 0.8, 0., 1.)),
                 );
             });
         vec![geometry]
@@ -572,6 +630,17 @@ fn linear_map(x: f64, from: Range<f64>, to: Range<f64>) -> f64 {
     to.start + (x - from.start) / (from.end - from.start) * (to.end - to.start)
 }
 
+fn path_from_iter(mut points: impl Iterator<Item = Point>) -> Path {
+    Path::new(|builder| {
+        if let Some(point) = points.by_ref().next() {
+            builder.move_to(point);
+        };
+        for point in points {
+            builder.line_to(point);
+        }
+    })
+}
+
 #[derive(Clone, Debug)]
 enum Message {
     Event(Event),
@@ -583,6 +652,8 @@ enum Message {
     Connect,
     ConnectionEstablished(UnboundedSender<()>),
     ConnectionLost(Option<String>),
+
+    SetAverageCount(usize),
 
     WaveformScrolled(WaveformPosition, f64),
 
