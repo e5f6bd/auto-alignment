@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = { version = "0.4.38", default-features = false }
 dl950acqapi-sys = { version = "0.1.0", path = "../dl950acqapi-sys" }
+sealed = "0.5.0"
 thiserror = "1.0.61"
 
 [dev-dependencies]
