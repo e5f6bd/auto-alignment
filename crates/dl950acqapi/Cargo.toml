@@ -1,0 +1,12 @@
+[package]
+name = "dl950acqapi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dl950acqapi-sys = { version = "0.1.0", path = "../dl950acqapi-sys" }
+thiserror = "1.0.61"
+
+[dev-dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.4", features = ["derive"] }
