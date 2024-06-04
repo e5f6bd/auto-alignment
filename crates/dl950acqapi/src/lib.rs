@@ -89,7 +89,7 @@ impl Api {
         Handle::open(wire_type, address)
     }
 
-    pub fn open_trigger_asnyc(
+    pub fn open_trigger_async(
         &self,
         wire_type: WireType,
         address: &str,

@@ -12,7 +12,7 @@ fn main() -> anyhow::Result<()> {
     let opts = Opts::parse();
 
     let api = Api::init()?;
-    let handle = api.open_trigger_asnyc(Vxi11, &opts.ip_address.to_string())?;
+    let handle = api.open_trigger_async(Vxi11, &opts.ip_address.to_string())?;
 
     let channel = ChannelNumber {
         channel: 5,
