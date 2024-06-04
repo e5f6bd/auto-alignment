@@ -38,20 +38,7 @@ fn main() -> anyhow::Result<()> {
         } {
             sleep(Duration::from_millis(1));
         }
-        handle.set_acquisition_index(1)?;
-        let length = handle.triggered_samples_len(channel)?;
-        let mut buffer = vec![0; length * 2 + 1]; // The last byte is reversed for b'\n'.
-                                                  // Without this byte, the library mistakenly
-                                                  // thinks that writing is not complete
-        let result = handle.read_triggered_waveform(channel, &mut buffer)?;
-        if !result.completed {
-            bail!("Acquisition incomplete");
-        }
-        buffer[..length * 2]
-            .chunks(2)
-            // Guaranteed to be even-lengthed
-            .map(|bytes| i16::from_le_bytes(bytes.try_into().unwrap()))
-            .collect::<Vec<_>>()
+        handle.get_waveform(1, channel)?
     };
     calculate(Params {
         waveform: &waveform.iter().map(|&x| x as f64).collect::<Vec<_>>(),

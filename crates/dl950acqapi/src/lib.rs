@@ -304,3 +304,35 @@ impl<T: TriggerMode> Handle<T> {
         check(unsafe { ScSetAcqCount(self.0, index) })
     }
 }
+
+#[derive(Debug, Error)]
+pub enum GetWaveformError {
+    #[error("The API returned an error")]
+    ApiError(#[from] Error),
+    #[error("Acquisition incomplete.  Maybe this is not a 16-bit voltage channel?")]
+    Incomplete,
+}
+impl<T: TriggerMode> Handle<T> {
+    /// Advanced API.
+    /// Only supports 16-bit voltage channel.
+    pub fn get_waveform(
+        &self,
+        acquisition_index: i64,
+        channel: ChannelNumber,
+    ) -> Result<Vec<i16>, GetWaveformError> {
+        self.set_acquisition_index(acquisition_index)?;
+        let length = self.triggered_samples_len(channel)?;
+        // The last byte is reversed for b'\n'.
+        // Without this byte, the library mistakenly thinks that writing is not complete.
+        let mut buffer = vec![0; length * 2 + 1];
+        let result = self.read_triggered_waveform(channel, &mut buffer)?;
+        if !result.completed {
+            return Err(GetWaveformError::Incomplete);
+        }
+        Ok(buffer[..length * 2]
+            .chunks(2)
+            // Guaranteed to be even-lengthed
+            .map(|bytes| i16::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>())
+    }
+}
