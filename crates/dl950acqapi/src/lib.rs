@@ -209,6 +209,14 @@ pub struct ChannelNumber {
     pub channel: u8,
     pub sub_channel: u8,
 }
+impl ChannelNumber {
+    pub fn new(channel: u8, sub_channel: u8) -> Self {
+        Self {
+            channel,
+            sub_channel,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct ReadTriggeredWaveformReturn {
