@@ -28,34 +28,30 @@ fn main() -> anyhow::Result<()> {
     let ctrlc = move || ctrlc_tx.try_recv().is_ok();
 
     let waveform = {
-        println!("Sleeping for 10 seconds...");
-        sleep(Duration::from_secs(10));
-        handle.latch_data()?;
-        println!("Latched");
-        // while {
-        //     if ctrlc() {
-        //         bail!("Interrupped");
-        //     }
-        //     let count = handle.latched_acquisition_count()?;
-        //     println!("{count}");
-        //     count == 0
-        // } {
-        //     sleep(Duration::from_millis(1));
-        // }
-        handle.set_acquisition_index(0)?;
-        println!("Acquisition index set");
+        while {
+            handle.latch_data()?;
+            if ctrlc() {
+                bail!("Interrupped");
+            }
+            let count = handle.latched_acquisition_count()?;
+            count == 0
+        } {
+            sleep(Duration::from_millis(1));
+        }
+        handle.set_acquisition_index(1)?;
         let length = handle.triggered_samples_len(channel)?;
-        println!("length = {length}");
-        let mut buffer = vec![0; length * 2];
+        let mut buffer = vec![0; length * 2 + 1]; // The last byte is reversed for b'\n'.
+                                                  // Without this byte, the library mistakenly
+                                                  // thinks that writing is not complete
         let result = handle.read_triggered_waveform(channel, &mut buffer)?;
-        println!("return = {result:?}");
         if !result.completed {
             bail!("Acquisition incomplete");
         }
-        buffer
+        buffer[..length * 2]
             .chunks(2)
-            .map(|bytes| anyhow::Ok(i16::from_le_bytes(bytes.try_into()?)))
-            .collect::<Result<Vec<_>, _>>()?
+            // Guaranteed to be even-lengthed
+            .map(|bytes| i16::from_le_bytes(bytes.try_into().unwrap()))
+            .collect::<Vec<_>>()
     };
     calculate(Params {
         waveform: &waveform.iter().map(|&x| x as f64).collect::<Vec<_>>(),

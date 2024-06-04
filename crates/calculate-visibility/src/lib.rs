@@ -4,6 +4,6 @@ pub struct Params<'a> {
 }
 
 pub fn calculate(params: Params) -> Option<f64> {
-    println!("{params:?}");
+    println!("{:?}", &params.waveform[..params.waveform.len().min(100)]);
     None
 }
