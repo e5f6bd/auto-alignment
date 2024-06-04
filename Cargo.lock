@@ -356,6 +356,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "dl950acqapi",
+ "ordered-float",
 ]
 
 [[package]]
@@ -744,6 +745,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "ctrlc",
  "dl950acqapi-sys",
  "sealed",
  "thiserror",

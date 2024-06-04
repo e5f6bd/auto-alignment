@@ -1,6 +1,5 @@
 use std::{net::IpAddr, sync::mpsc, thread::sleep, time::Duration};
 
-use anyhow::bail;
 use calculate_visibility::{calculate, Params};
 use clap::Parser;
 use dl950acqapi::{Api, ChannelNumber, WireType::Vxi11};
@@ -8,6 +7,8 @@ use dl950acqapi::{Api, ChannelNumber, WireType::Vxi11};
 #[derive(Parser)]
 struct Opts {
     ip_address: IpAddr,
+    #[clap(long)]
+    repeat: bool,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -27,22 +28,27 @@ fn main() -> anyhow::Result<()> {
     })?;
     let ctrlc = move || ctrlc_tx.try_recv().is_ok();
 
-    let waveform = {
-        while {
-            handle.latch_data()?;
-            if ctrlc() {
-                bail!("Interrupped");
+    'outer: for i in 1.. {
+        let waveform = {
+            while {
+                handle.latch_data()?;
+                if ctrlc() {
+                    break 'outer;
+                }
+                let count = handle.latched_acquisition_count()?;
+                count < i
+            } {
+                sleep(Duration::from_millis(1));
             }
-            let count = handle.latched_acquisition_count()?;
-            count == 0
-        } {
-            sleep(Duration::from_millis(1));
+            handle.get_waveform(i, channel)?
+        };
+        calculate(Params {
+            waveform: &waveform.iter().map(|&x| x as f64).collect::<Vec<_>>(),
+        });
+        if !opts.repeat || ctrlc() {
+            break;
         }
-        handle.get_waveform(1, channel)?
-    };
-    calculate(Params {
-        waveform: &waveform.iter().map(|&x| x as f64).collect::<Vec<_>>(),
-    });
+    }
 
     handle.stop()?;
     Ok(())

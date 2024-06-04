@@ -12,3 +12,4 @@ thiserror = "1.0.61"
 [dev-dependencies]
 anyhow = "1.0.86"
 clap = { version = "4.5.4", features = ["derive"] }
+ctrlc = "3.4.4"
