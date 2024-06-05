@@ -51,17 +51,20 @@ pub fn calculate(params: Params) -> Option<f64> {
         extremes.push(extreme);
     }
 
-    let [min, max] = [min?, max?];
-    let visibility_fit = visibility(min, max);
     let average = params.waveform.iter().sum::<f64>() / params.waveform.len() as f64;
-    for extreme in extremes {
-        print!("{:6.1}  ", extreme);
+    print!("{average:6.1}    ");
+    if let (Some(min), Some(max)) = (min, max) {
+        let visibility_fit = visibility(min, max);
+        print!(
+            "{:3.2}  {:3.2}",
+            visibility_fit * 100.,
+            visibility_minmax * 100.
+        );
+        for extreme in extremes {
+            print!("  {:6.1}", extreme);
+        }
     }
-    println!(
-        "{:3.2}  {:3.2}  {average:6.1}",
-        visibility_fit * 100.,
-        visibility_minmax * 100.
-    );
+    println!();
     None
 }
 
