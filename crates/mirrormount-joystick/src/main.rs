@@ -1,3 +1,5 @@
+#![allow(clippy::assigning_clones)]
+
 use std::{
     cmp::Ordering,
     f64::consts::TAU,
