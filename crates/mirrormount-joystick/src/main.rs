@@ -9,7 +9,13 @@ use std::{
 
 use itertools::Itertools;
 use pamc112::{Pamc112, RotationDirection::*};
-use sdl2::{event::Event, pixels::Color, rect::Rect, render::BlendMode};
+use sdl2::{
+    event::Event,
+    keyboard::{Keycode, Mod},
+    pixels::Color,
+    rect::Rect,
+    render::BlendMode,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -39,8 +45,15 @@ fn main() -> anyhow::Result<()> {
     let mut canvas = window.into_canvas().present_vsync().build()?;
     let texture_creator = canvas.texture_creator();
 
+    dbg!();
     let joystick = sdl.joystick()?;
-    let _joystick = joystick.open(0)?;
+    dbg!();
+    let _joystick = if dbg!(joystick.num_joysticks())? > 0 {
+        Some(joystick.open(0)?)
+    } else {
+        println!("Warning: joystick not detected.");
+        None
+    };
 
     let ttf = sdl2::ttf::init()?;
     let font = ttf.load_font(config.font_path, 36)?;
@@ -102,6 +115,63 @@ fn main() -> anyhow::Result<()> {
                                 delta.unsigned_abs() * config.tick,
                             )?,
                         }
+                    }
+                }
+                Event::KeyDown {
+                    keycode: Some(keycode),
+                    keymod,
+                    ..
+                } => {
+                    match state.mode {
+                        Mode::Operating => {
+                            if let Some((choice, direction)) = match keycode {
+                                Keycode::Up => Some((false, Cw)),
+                                Keycode::Down => Some((false, Ccw)),
+                                Keycode::Left => Some((true, Cw)),
+                                Keycode::Right => Some((true, Ccw)),
+                                _ => None,
+                            } {
+                                let (i, j) = state.selections[choice as usize];
+                                let channel = state.axis_choices[i][j].0 as u8;
+                                let two_or_one = |x: bool| if x { 2 } else { 1 };
+                                let mod_speed =
+                                    two_or_one(keymod.intersects(Mod::LCTRLMOD | Mod::RCTRLMOD))
+                                        * two_or_one(
+                                            keymod.intersects(Mod::LALTMOD | Mod::RALTMOD),
+                                        );
+                                controller.drive(
+                                    channel,
+                                    direction,
+                                    config.freq,
+                                    config.tick * mod_speed * state.speed,
+                                )?;
+                                managers[choice as usize].indicator_position +=
+                                    if let Cw = direction { 1 } else { -1 };
+                            }
+                        }
+                        Mode::Selecting(_, _) => {
+                            use JoyButton::*;
+                            match keycode {
+                                Keycode::W | Keycode::Up => state.handle_button(Up),
+                                Keycode::S | Keycode::Down => state.handle_button(Down),
+                                Keycode::A | Keycode::Left => state.handle_button(Left),
+                                Keycode::D | Keycode::Right => state.handle_button(Right),
+                                _ => {}
+                            }
+                        }
+                    }
+                    match keycode {
+                        Keycode::Z => state.handle_button(JoyButton::A),
+                        Keycode::X => state.handle_button(JoyButton::B),
+                        _ => {}
+                    }
+                    {
+                        let new_speed = match keycode {
+                            Keycode::K => state.speed * 2,
+                            Keycode::J => state.speed / 2,
+                            _ => state.speed,
+                        };
+                        state.speed = new_speed.clamp(1, 1024);
                     }
                 }
                 Event::Quit { .. } => break 'outer_loop,
@@ -196,6 +266,7 @@ struct UiState {
     selections: [(usize, usize); 2],
     mode: Mode,
     message: String,
+    speed: u16,
 }
 #[derive(Debug, Clone)]
 struct AxisChoice(usize);
@@ -237,6 +308,7 @@ impl UiState {
             selections: [(0, 0), (0, 1)],
             mode: Mode::selecting(false),
             message: "".to_owned(),
+            speed: 1,
         }
     }
 
