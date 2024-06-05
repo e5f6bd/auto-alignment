@@ -1,3 +1,5 @@
+use std::mem::size_of;
+
 use itertools::Itertools;
 use ordered_float::OrderedFloat;
 use polyfit_rs::polyfit_rs::polyfit;
@@ -19,6 +21,13 @@ pub fn calculate(params: Params) -> Option<f64> {
     let mut extremes = vec![];
 
     for segment in params.waveform.chunk_by(|&x, &y| bound(x) == bound(y)) {
+        let start =
+            (segment.as_ptr() as usize - params.waveform.as_ptr() as usize) / size_of::<f64>();
+        let end = start + segment.len();
+        if start == 0 || end == params.waveform.len() {
+            continue;
+        }
+
         let (is_min, is_max) = bound(segment[0]);
         if !(is_min || is_max) || segment.len() < 20 {
             continue;
