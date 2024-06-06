@@ -1,11 +1,12 @@
 use anyhow::bail;
 use clap::Parser;
+use pamc112::RotationDirection::{self, *};
+use serde::Deserialize;
 use std::{
     path::PathBuf,
     thread::sleep,
     time::{Duration, Instant},
 };
-use serde::Deserialize;
 
 #[derive(Parser)]
 struct Opts {
@@ -129,7 +130,7 @@ fn main() -> anyhow::Result<()> {
             &constant,
             ser1,
             measured_parameter,
-        );
+        )?;
         let (da, db, dc, dd) = (grad[0], grad[1], grad[2], grad[3]);
         let absgrad = [da.abs(), db.abs(), dc.abs(), dd.abs()];
         let index = (0..4).fold(0, |i, j| if absgrad[i] > absgrad[j] { i } else { j });
@@ -159,18 +160,19 @@ fn main() -> anyhow::Result<()> {
         }
 
         loop {
-            let mut dire = [1.0; 4];
+            let mut dire = [Cw; 4];
             let mut movement = [step_size1; 4];
             for j in 0..4 {
                 if grad[j] > 0.0 {
-                    dire[j] = 1.0;
+                    dire[j] = Cw;
                     movement[j] = step_size1 * constant[j];
                 } else {
-                    dire[j] = -1.0;
+                    dire[j] = Ccw;
                 }
                 movement[j] *= rate[j];
                 move_servo(ser1, dire[j], movement[j], j as u8);
-                rotation[j] += dire[j] * step_size1 * rate[j];
+                let direction_coef = if let Cw = dire[j] { 1. } else { -1. };
+                rotation[j] += direction_coef * step_size1 * rate[j];
             }
 
             r += dirr * step_size1;
@@ -245,16 +247,19 @@ fn shutter(_: (), channel: u8, command: &'static str) {}
 
 #[allow(unused)]
 fn ave((device_name, min_set, max_set, m_time): (&'static str, i32, i32, f64)) -> f64 {
-    todo!()
+    // TODO Get average of all datapoints
+    0.0
 }
 
 #[allow(unused)]
 fn vis_func(input1: f64, input2: f64, base_line: f64, parameter: (&str, i32, i32, f64)) -> f64 {
+    // TODO measure visibility
     0.0
 }
 
 #[allow(unused)]
 fn measurement(parameter: (&str, i32, i32, f64)) -> Vec<(f64, f64)> {
+    // TODO get from oscilloscope
     vec![]
 }
 
@@ -267,12 +272,43 @@ fn gradient(
     constant: &[f64; 4],
     ser: (),
     parameter: (&str, i32, i32, f64),
-) -> [f64; 4] {
-    [0.0, 0.0, 0.0, 0.0]
+) -> anyhow::Result<[f64; 4]> {
+    let e = 75.0;
+    let mut big = [0.0; 4];
+    let mut small = [0.0; 4];
+
+    let move_p = move_p as f64;
+
+    let o = vis_func(input1, input2, base_line, parameter);
+    println!("Now visibility is {o:.4}");
+    for i in 0..4 {
+        move_servo(ser, Cw, move_p * constant[i], i as u8); // clockwise
+        big[i] = vis_func(input1, input2, base_line, parameter);
+        move_servo(ser, Ccw, move_p, i as u8);
+        let o_temp = vis_func(input1, input2, base_line, parameter);
+        if (o - o_temp).abs() > e {
+            bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
+        }
+        move_servo(ser, Ccw, move_p, i as u8); // Anticlockwise
+        small[i] = vis_func(input1, input2, base_line, parameter);
+        move_servo(ser, Cw, move_p * constant[i], i as u8);
+        let o_temp = vis_func(input1, input2, base_line, parameter);
+        if (o - o_temp).abs() > e {
+            bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
+        }
+    }
+
+    let gradient = big
+        .iter()
+        .zip(&small)
+        .map(|(b, s)| (b - s) / move_p)
+        .collect::<Vec<f64>>();
+    println!("∇Vis: {:?}", gradient);
+    Ok(gradient.try_into().unwrap())
 }
 
 #[allow(unused)]
-fn move_servo(ser: (), direction: f64, movement: f64, index: u8) {}
+fn move_servo(ser: (), direction: RotationDirection, movement: f64, index: u8) {}
 
 // struct DataFrame {
 //     data: Vec<Vec<f64>>,
