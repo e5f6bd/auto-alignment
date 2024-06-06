@@ -1,0 +1,14 @@
+[package]
+name = "auto-visibility-2023"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.4", features = ["derive"] }
+dl950acqapi = { version = "0.1.0", path = "../dl950acqapi" }
+fs-err = "2.11.0"
+pamc112 = { version = "0.1.0", path = "../pamc112" }
+serde = { version = "1.0.203", features = ["derive"] }
+serial-wrapper = { version = "0.1.0", path = "../serial-wrapper" }
+toml = "0.8.14"

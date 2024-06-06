@@ -105,14 +105,14 @@ fn main() -> anyhow::Result<()> {
                                 channel,
                                 Cw,
                                 config.freq,
-                                delta.unsigned_abs() * config.tick,
+                                delta.unsigned_abs() * config.tick * state.speed,
                             )?,
                             Ordering::Equal => {}
                             Ordering::Greater => controller.drive(
                                 channel,
                                 Ccw,
                                 config.freq,
-                                delta.unsigned_abs() * config.tick,
+                                delta.unsigned_abs() * config.tick * state.speed,
                             )?,
                         }
                     }
@@ -252,6 +252,16 @@ fn main() -> anyhow::Result<()> {
                 canvas.set_draw_color(Color::RED);
                 canvas.draw_line(center, (center.x + dx, center.y + dy))?;
             }
+        }
+
+        {
+            let text = &texture_creator.create_texture_from_surface(
+                font.render(&state.speed.to_string())
+                    .blended(Color::WHITE)?,
+            )?;
+            let dim = text.query();
+            let dst = Rect::new(w as i32 - dim.width as i32, 0, dim.width, dim.height);
+            canvas.copy(text, None, dst)?;
         }
 
         canvas.present();
