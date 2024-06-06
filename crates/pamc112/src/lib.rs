@@ -36,7 +36,7 @@ impl Pamc112 {
     /// Constraints (panics otherwise)
     /// * channel < 22
     /// * 1 <= frequency <= 1500
-    /// * count <= 10^4
+    /// * 1 <= count <= 10^4
     pub fn drive(
         &mut self,
         channel: u8,
@@ -46,6 +46,7 @@ impl Pamc112 {
     ) -> anyhow::Result<()> {
         assert!(channel < 22);
         assert!((1..=1500).contains(&frequency));
+        assert!(count > 0, "Setting count to 0 causes an indefinite drive!");
         assert!(count < 10000);
         let direction = match direction {
             RotationDirection::Cw => "NR",

@@ -187,10 +187,11 @@ fn main() -> anyhow::Result<()> {
             break;
         }
 
-        let mut rate = [1.0; 4];
-        for k in 1..4 {
-            rate[k + index - 4] = (grad[index + k - 4] / grad[index]).abs();
-        }
+        // let mut rate = [1.0; 4];
+        // for k in 1..4 {
+        //     rate[k + index - 4] = (grad[index + k - 4] / grad[index]).abs();
+        // }
+        let rate: [f64; 4] = grad.map(|x| (x / grad[index]).abs());
 
         let mut r = 0.0;
         let mut dirr = 1.0;
