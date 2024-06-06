@@ -5,11 +5,14 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
+calculate-visibility = { version = "0.1.0", path = "../calculate-visibility" }
 chrono = "0.4.38"
 clap = { version = "4.5.4", features = ["derive"] }
 ctrlc = "3.4.4"
 dl950acqapi = { version = "0.1.0", path = "../dl950acqapi" }
+env_logger = "0.11.3"
 fs-err = "2.11.0"
+log = "0.4.21"
 pamc112 = { version = "0.1.0", path = "../pamc112" }
 serde = { version = "1.0.203", features = ["derive"] }
 toml = "0.8.14"

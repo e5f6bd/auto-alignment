@@ -65,7 +65,7 @@ pub fn calculate(params: Params) -> Option<f64> {
         }
     }
     println!();
-    None
+    Some(visibility_minmax)
 }
 
 fn visibility(min: f64, max: f64) -> f64 {

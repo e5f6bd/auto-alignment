@@ -6,9 +6,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::bail;
+use anyhow::{bail, Context};
+use calculate_visibility::Params;
 use clap::Parser;
 use dl950acqapi::{connection_mode::TriggerAsync, ChannelNumber, Handle, WireType::Vxi11};
+use log::{error, info};
 use pamc112::{Pamc112, RotationDirection::*};
 use serde::Deserialize;
 
@@ -30,6 +32,8 @@ struct Config {
 }
 
 fn main() -> anyhow::Result<()> {
+    env_logger::builder().format_timestamp_nanos().init();
+
     let opts = Opts::parse();
     let config: Config = toml::from_str(&fs_err::read_to_string(opts.config_path)?)?;
     let channel = ChannelNumber {
@@ -46,13 +50,13 @@ fn main() -> anyhow::Result<()> {
     let (ctrlc_rx, ctrlc_tx) = mpsc::channel();
     ctrlc::set_handler(move || {
         if let Err(e) = ctrlc_rx.send(()) {
-            eprintln!("Could not send Ctrl+C signal: {e}");
+            error!("Could not send Ctrl+C signal: {e}");
         }
     })?;
     let ctrlc = move || {
         let ret = ctrlc_tx.try_recv().is_ok();
         if ret {
-            println!("Ctrl-C detected, aborting.");
+            info!("Ctrl-C detected, aborting.");
         }
         ret
     };
@@ -177,7 +181,7 @@ fn main() -> anyhow::Result<()> {
     let mut flag = false;
 
     while !flag && !ctrlc() {
-        println!("{} times", i);
+        info!("{} times", i);
         let mut grad = gradient(
             &ctrlc,
             &mut pamc,
@@ -195,7 +199,7 @@ fn main() -> anyhow::Result<()> {
         let index = (0..4).fold(0, |i, j| if absgrad[i] > absgrad[j] { i } else { j });
 
         if da.abs() < e && db.abs() < e && dc.abs() < e && dd.abs() < e {
-            println!("Program finished");
+            info!("Program finished");
             break;
         }
 
@@ -215,10 +219,10 @@ fn main() -> anyhow::Result<()> {
         if vis > 99.0 {
             break;
         } else {
-            println!("Next Optimization!!");
+            info!("Next Optimization!!");
         }
 
-        loop {
+        while !ctrlc() {
             let mut dire = [Cw; 4];
             let mut movement = [step_size1; 4];
             for j in 0..4 {
@@ -251,7 +255,7 @@ fn main() -> anyhow::Result<()> {
                 measured_parameter,
             )?;
             result.push(temp);
-            println!("Visibility: {}", temp);
+            info!("Visibility: {}", temp);
             let end = Instant::now();
             let time = end.duration_since(start).as_secs_f64();
             t.push(time);
@@ -274,7 +278,7 @@ fn main() -> anyhow::Result<()> {
 
             if vis > 99.0 {
                 flag = true;
-                println!("Visibility is over 99%, program finish");
+                info!("Visibility is over 99%, program finish");
                 break;
             }
         }
@@ -297,14 +301,14 @@ fn main() -> anyhow::Result<()> {
 
     let z: Vec<_> = z.into_iter().flatten().collect();
     // let n = (0..z.len()).collect::<Vec<_>>();
-    println!("Final Visibility: {}", z.last().unwrap());
+    info!("Final Visibility: {}", z.last().unwrap());
     // TODO save
     // let result = vec![&n, &t, &a, &b, &c, &d, &z].concat();
     // let raw_data3 = DataFrame::new(result);
     // let path = Path::new(&format!("f{}Time{}.csv", t, time.round()));
     // let mut file = File::create(&path).unwrap();
     // raw_data3.write_csv(&mut file).unwrap();
-    println!("{}", time);
+    info!("{}", time);
 
     Ok(())
 }
@@ -318,15 +322,14 @@ fn main() -> anyhow::Result<()> {
 //     0.0
 // }
 
-#[allow(unused)]
 fn vis_func(
     ctrlc: impl Fn() -> bool,
     handle: &Handle<TriggerAsync>,
     channel: ChannelNumber,
-    input1: f64,
-    input2: f64,
-    base_line: f64,
-    parameter: (&str, i32, i32, f64),
+    _input1: f64,
+    _input2: f64,
+    _base_line: f64,
+    _parameter: (&str, i32, i32, f64),
 ) -> anyhow::Result<f64> {
     handle.latch_data()?;
     let count_current = handle.latched_acquisition_count()?;
@@ -341,7 +344,11 @@ fn vis_func(
         sleep(Duration::from_millis(1));
     }
     let waveform = handle.get_waveform(count_current + 1, channel)?;
-    Ok(0.0)
+    let visibility = calculate_visibility::calculate(Params {
+        waveform: &waveform.iter().map(|&x| x as f64).collect::<Vec<_>>(),
+    })
+    .context("Visibility could not be found")?;
+    Ok(visibility)
 }
 
 // #[allow(unused)]
@@ -378,7 +385,7 @@ fn gradient(
         base_line,
         parameter,
     )?;
-    println!("Now visibility is {o:.4}");
+    info!("Now visibility is {o:.4}");
     for i in 0..4 {
         pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?; // clockwise
         big[i] = vis_func(
@@ -433,7 +440,7 @@ fn gradient(
         .zip(&small)
         .map(|(b, s)| (b - s) / move_p)
         .collect::<Vec<f64>>();
-    println!("∇Vis: {:?}", gradient);
+    info!("∇Vis: {:?}", gradient);
     Ok(gradient.try_into().unwrap())
 }
 

@@ -205,11 +205,14 @@ name = "auto-visibility-2023"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "calculate-visibility",
  "chrono",
  "clap",
  "ctrlc",
  "dl950acqapi",
+ "env_logger",
  "fs-err",
+ "log",
  "pamc112",
  "serde",
  "toml",
