@@ -32,6 +32,8 @@ struct Config {
     input2: f64,
     #[allow(unused)]
     base_line: f64,
+
+    pamc_wait: f64,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -213,6 +215,7 @@ fn main() -> anyhow::Result<()> {
                 }
                 movement[j] *= rate[j];
                 pamc.drive(j as u8, dire[j], 1500, movement[j] as u16)?;
+                sleep(Duration::from_secs_f64(config.pamc_wait));
                 let direction_coef = if let Cw = dire[j] { 1. } else { -1. };
                 rotation[j] += direction_coef * step_size1 * rate[j];
             }
@@ -345,16 +348,25 @@ fn gradient(
     info!("Now visibility is {o:.4}");
     for i in 0..4 {
         pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?; // clockwise
+        sleep(Duration::from_secs_f64(config.pamc_wait));
         big[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
+
         pamc.drive(i as u8, Ccw, 1500, move_p as u16)?;
+        sleep(Duration::from_secs_f64(config.pamc_wait));
         let o_temp = vis_func(config, ctrlc.clone(), handle, channel)?;
+
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
+
         pamc.drive(i as u8, Ccw, 1500, move_p as u16)?; // Anticlockwise
+        sleep(Duration::from_secs_f64(config.pamc_wait));
         small[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
+
         pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?;
+        sleep(Duration::from_secs_f64(config.pamc_wait));
         let o_temp = vis_func(config, ctrlc.clone(), handle, channel)?;
+
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
