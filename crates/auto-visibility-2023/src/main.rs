@@ -32,6 +32,10 @@ struct Config {
     input2: f64,
     #[allow(unused)]
     base_line: f64,
+    // Ratio of speed for Cw / speed for Ccw
+    pamc_coef: [f64; 4],
+    // Base step of gradient (pulse count; default = 10)
+    pamc_step: f64,
 
     pamc_wait: f64,
 }
@@ -112,12 +116,13 @@ fn main() -> anyhow::Result<()> {
     let (min_set, max_set, m_time) = (-3, 3, 0.5);
     let _measured_parameter = (device_name, min_set, max_set, m_time);
     let e = 1e-05;
-    let move_p = 10; //pulses
-    let constant_a = 2.28;
-    let constant_b = 2.85;
-    let constant_c = 1.33;
-    let constant_d = 2.8;
-    let constant = [constant_a, constant_b, constant_c, constant_d];
+    // let move_p = 10; //pulses
+
+    // let constant_a = 2.28;
+    // let constant_b = 2.85;
+    // let constant_c = 1.33;
+    // let constant_d = 2.8;
+    // let constant = [constant_a, constant_b, constant_c, constant_d];
 
     let mut a = vec![];
     let mut b = vec![];
@@ -172,9 +177,7 @@ fn main() -> anyhow::Result<()> {
 
     while !flag && !ctrlc() {
         info!("{} times", i);
-        let mut grad = gradient(
-            &config, &ctrlc, &mut pamc, &handle, channel, move_p, &constant,
-        )?;
+        let mut grad = gradient(&config, &ctrlc, &mut pamc, &handle, channel)?;
         let (da, db, dc, dd) = (grad[0], grad[1], grad[2], grad[3]);
         let absgrad = [da.abs(), db.abs(), dc.abs(), dd.abs()];
         let index = (0..4).fold(0, |i, j| if absgrad[i] > absgrad[j] { i } else { j });
@@ -209,7 +212,7 @@ fn main() -> anyhow::Result<()> {
             for j in 0..4 {
                 if grad[j] > 0.0 {
                     dire[j] = Cw;
-                    movement[j] = step_size1 * constant[j];
+                    movement[j] = step_size1 * config.pamc_coef[j];
                 } else {
                     dire[j] = Ccw;
                 }
@@ -335,19 +338,17 @@ fn gradient(
     pamc: &mut Pamc112,
     handle: &Handle<TriggerAsync>,
     channel: ChannelNumber,
-    move_p: i32,
-    constant: &[f64; 4],
 ) -> anyhow::Result<[f64; 4]> {
     let e = 75.0;
     let mut big = [0.0; 4];
     let mut small = [0.0; 4];
 
-    let move_p = move_p as f64;
+    let move_p = config.pamc_step;
 
     let o = vis_func(config, ctrlc.clone(), handle, channel)?;
     info!("Now visibility is {o:.4}");
     for i in 0..4 {
-        pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?; // clockwise
+        pamc.drive(i as u8, Cw, 1500, (move_p * config.pamc_coef[i]) as u16)?; // clockwise
         sleep(Duration::from_secs_f64(config.pamc_wait));
         big[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
 
@@ -363,7 +364,7 @@ fn gradient(
         sleep(Duration::from_secs_f64(config.pamc_wait));
         small[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
 
-        pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?;
+        pamc.drive(i as u8, Cw, 1500, (move_p * config.pamc_coef[i]) as u16)?;
         sleep(Duration::from_secs_f64(config.pamc_wait));
         let o_temp = vis_func(config, ctrlc.clone(), handle, channel)?;
 
