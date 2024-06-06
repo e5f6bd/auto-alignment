@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     net::IpAddr,
     path::PathBuf,
     sync::mpsc,
@@ -10,8 +11,11 @@ use anyhow::{bail, Context};
 use calculate_visibility::Params;
 use clap::Parser;
 use dl950acqapi::{connection_mode::TriggerAsync, ChannelNumber, Handle, WireType::Vxi11};
-use log::{error, info};
-use pamc112::{Pamc112, RotationDirection::*};
+use log::{error, info, warn};
+use pamc112::{
+    Pamc112,
+    RotationDirection::{self, *},
+};
 use serde::Deserialize;
 
 #[derive(Parser)]
@@ -218,8 +222,14 @@ fn main() -> anyhow::Result<()> {
                     dire[j] = Ccw;
                 }
                 movement[j] *= rate[j];
-                pamc.drive(j as u8, dire[j], 1500, movement[j] as u16)?;
-                sleep(Duration::from_secs_f64(config.pamc_wait));
+                drive_pamc(
+                    &mut pamc,
+                    j as u8,
+                    dire[j],
+                    1500,
+                    movement[j],
+                    config.pamc_wait,
+                )?;
                 let direction_coef = if let Cw = dire[j] { 1. } else { -1. };
                 rotation[j] += direction_coef * step_size1 * rate[j];
             }
@@ -348,27 +358,21 @@ fn gradient(
 
     let o = vis_func(config, ctrlc.clone(), handle, channel)?;
     info!("Now visibility is {o:.4}");
-    for i in 0..4 {
-        pamc.drive(i as u8, Cw, 1500, (move_p * config.pamc_coef[i]) as u16)?; // clockwise
-        sleep(Duration::from_secs_f64(config.pamc_wait));
+    for i in 0..4usize {
+        let coef = config.pamc_coef[i];
+
+        drive_pamc(pamc, i as u8, Cw, 1500, move_p * coef, config.pamc_wait)?; // clockwise
         big[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
-
-        pamc.drive(i as u8, Ccw, 1500, move_p as u16)?;
-        sleep(Duration::from_secs_f64(config.pamc_wait));
+        drive_pamc(pamc, i as u8, Ccw, 1500, move_p, config.pamc_wait)?;
         let o_temp = vis_func(config, ctrlc.clone(), handle, channel)?;
-
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
 
-        pamc.drive(i as u8, Ccw, 1500, move_p as u16)?; // Anticlockwise
-        sleep(Duration::from_secs_f64(config.pamc_wait));
+        drive_pamc(pamc, i as u8, Cw, 1500, move_p, config.pamc_wait)?; // Anticlcockwise
         small[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
-
-        pamc.drive(i as u8, Cw, 1500, (move_p * config.pamc_coef[i]) as u16)?;
-        sleep(Duration::from_secs_f64(config.pamc_wait));
+        drive_pamc(pamc, i as u8, Cw, 1500, move_p * coef, config.pamc_wait)?;
         let o_temp = vis_func(config, ctrlc.clone(), handle, channel)?;
-
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
@@ -381,6 +385,28 @@ fn gradient(
         .collect::<Vec<f64>>();
     info!("∇Vis: {:?}", gradient);
     Ok(gradient.try_into().unwrap())
+}
+
+fn drive_pamc(
+    pamc: &mut Pamc112,
+    channel: u8,
+    direction: RotationDirection,
+    frequency: u16,
+    count: f64,
+    wait: f64,
+) -> anyhow::Result<()> {
+    let count = count as u16;
+    match count.cmp(&0) {
+        Ordering::Greater => {
+            pamc.drive(channel, direction, frequency, count)?;
+            sleep(Duration::from_secs_f64(wait));
+        }
+        Ordering::Equal => {}
+        Ordering::Less => {
+            warn!("Tried to drive negative amount!");
+        }
+    }
+    Ok(())
 }
 
 // struct DataFrame {
