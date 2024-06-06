@@ -1,12 +1,16 @@
-use anyhow::bail;
-use clap::Parser;
-use pamc112::RotationDirection::{self, *};
-use serde::Deserialize;
 use std::{
+    net::IpAddr,
     path::PathBuf,
+    sync::mpsc,
     thread::sleep,
     time::{Duration, Instant},
 };
+
+use anyhow::bail;
+use clap::Parser;
+use dl950acqapi::{connection_mode::TriggerAsync, ChannelNumber, Handle, WireType::Vxi11};
+use pamc112::{Pamc112, RotationDirection::*};
+use serde::Deserialize;
 
 #[derive(Parser)]
 struct Opts {
@@ -14,11 +18,47 @@ struct Opts {
 }
 
 #[derive(Deserialize)]
-struct Config {}
+struct Config {
+    pamc_port: String,
+    dl950_address: IpAddr,
+    channel: u8,
+    sub_channel: u8,
+
+    input1: f64,
+    input2: f64,
+    base_line: f64,
+}
 
 fn main() -> anyhow::Result<()> {
-    let ser_s = ();
-    let ser1 = ();
+    let opts = Opts::parse();
+    let config: Config = toml::from_str(&fs_err::read_to_string(opts.config_path)?)?;
+    let channel = ChannelNumber {
+        channel: config.channel,
+        sub_channel: config.sub_channel,
+    };
+
+    let mut pamc = Pamc112::new(&config.pamc_port, Duration::from_secs(1))?;
+    let api = dl950acqapi::Api::init()?;
+    let handle = api.open_trigger_async(Vxi11, &config.dl950_address.to_string())?;
+    handle.start()?;
+    handle.latch_data()?;
+
+    let (ctrlc_rx, ctrlc_tx) = mpsc::channel();
+    ctrlc::set_handler(move || {
+        if let Err(e) = ctrlc_rx.send(()) {
+            eprintln!("Could not send Ctrl+C signal: {e}");
+        }
+    })?;
+    let ctrlc = move || {
+        let ret = ctrlc_tx.try_recv().is_ok();
+        if ret {
+            println!("Ctrl-C detected, aborting.");
+        }
+        ret
+    };
+
+    let _ser_s = ();
+    let _ser1 = ();
 
     let _com1 = "COM4"; // for coupling reflection light into photodiode
     let _com2 = "COM5"; // for half beam splitter
@@ -28,33 +68,33 @@ fn main() -> anyhow::Result<()> {
     let _bit_rate = 115200;
     let device_name = "Dev1/ai0"; // for digitizer
     let (min_set, max_set, m_time, m_timev) = (-3, 3, 0.3, 1.0); // measurement range and time of digitizer
-    let measured_parameter = (device_name, min_set, max_set, m_time);
+    let _measured_parameter = (device_name, min_set, max_set, m_time);
     let _measured_parameterv = (device_name, min_set, max_set, m_timev);
 
     // improving visibility
     let start = Instant::now();
-    sleep(Duration::from_secs(2));
-    shutter(ser_s, 0, "close"); // signal light is port 0
-    shutter(ser_s, 1, "close"); // LO light is port 1
-    shutter(ser_s, 2, "close");
-    shutter(ser_s, 3, "close");
-    // Not needed for now
-    // wheel(ser_w, 6); // Attention: must weaken signal light
-    let base_line = ave(measured_parameter);
-    sleep(Duration::from_secs(2));
-    shutter(ser_s, 2, "open");
-    shutter(ser_s, 0, "open");
-    sleep(Duration::from_secs(1));
-    let ave1 = ave(measured_parameter);
-    sleep(Duration::from_secs_f64(m_time));
-    let input1 = ave1 - base_line;
-    shutter(ser_s, 1, "open");
-    shutter(ser_s, 0, "close");
-    sleep(Duration::from_secs(1));
-    let ave2 = ave(measured_parameter);
-    let input2 = ave2 - base_line;
-    shutter(ser_s, 0, "open");
-    sleep(Duration::from_secs(1));
+    // sleep(Duration::from_secs(2));
+    // shutter(ser_s, 0, "close"); // signal light is port 0
+    // shutter(ser_s, 1, "close"); // LO light is port 1
+    // shutter(ser_s, 2, "close");
+    // shutter(ser_s, 3, "close");
+    // // Not needed for now
+    // // wheel(ser_w, 6); // Attention: must weaken signal light
+    // let base_line = ave(measured_parameter);
+    // sleep(Duration::from_secs(2));
+    // shutter(ser_s, 2, "open");
+    // shutter(ser_s, 0, "open");
+    // sleep(Duration::from_secs(1));
+    // let ave1 = ave(measured_parameter);
+    // sleep(Duration::from_secs_f64(m_time));
+    // let input1 = ave1 - base_line;
+    // shutter(ser_s, 1, "open");
+    // shutter(ser_s, 0, "close");
+    // sleep(Duration::from_secs(1));
+    // let ave2 = ave(measured_parameter);
+    // let input2 = ave2 - base_line;
+    // shutter(ser_s, 0, "open");
+    // sleep(Duration::from_secs(1));
 
     // COM_s = "COM3" // for optical shutter
     // COM = "COM10" // for improving visibility
@@ -76,26 +116,42 @@ fn main() -> anyhow::Result<()> {
     let mut d = vec![];
     let mut z = vec![];
     let mut t = vec![];
-    sleep(Duration::from_secs(2));
-    shutter(ser_s, 3, "close");
-    shutter(ser_s, 0, "close"); // signal light is port 0
-    shutter(ser_s, 1, "close"); // LO light is port 1
-    let base_line = ave(measured_parameter);
-    sleep(Duration::from_secs_f64(m_time));
-    shutter(ser_s, 0, "open");
-    sleep(Duration::from_secs(1));
-    let ave1 = ave(measured_parameter);
-    sleep(Duration::from_secs_f64(m_time));
-    let _input_1 = ave1 - base_line;
-    shutter(ser_s, 1, "open");
-    shutter(ser_s, 0, "close");
-    sleep(Duration::from_secs(1));
-    let ave2 = ave(measured_parameter);
-    let _input_2 = ave2 - base_line;
-    shutter(ser_s, 0, "open");
-    sleep(Duration::from_secs(1));
 
-    let mut vis = vis_func(input1, input2, base_line, measured_parameter);
+    // sleep(Duration::from_secs(2));
+    // shutter(ser_s, 3, "close");
+    // shutter(ser_s, 0, "close"); // signal light is port 0
+    // shutter(ser_s, 1, "close"); // LO light is port 1
+    // let base_line = ave(measured_parameter);
+    // sleep(Duration::from_secs_f64(m_time));
+    // shutter(ser_s, 0, "open");
+    // sleep(Duration::from_secs(1));
+    // let ave1 = ave(measured_parameter);
+    // sleep(Duration::from_secs_f64(m_time));
+    // let _input_1 = ave1 - base_line;
+    // shutter(ser_s, 1, "open");
+    // shutter(ser_s, 0, "close");
+    // sleep(Duration::from_secs(1));
+    // let ave2 = ave(measured_parameter);
+    // let _input_2 = ave2 - base_line;
+    // shutter(ser_s, 0, "open");
+    // sleep(Duration::from_secs(1));
+
+    let Config {
+        input1,
+        input2,
+        base_line,
+        ..
+    } = config;
+
+    let mut vis = vis_func(
+        &ctrlc,
+        &handle,
+        channel,
+        input1,
+        input2,
+        base_line,
+        measured_parameter,
+    )?;
     if vis < e {
         bail!("Please improve this visibility");
     }
@@ -120,15 +176,18 @@ fn main() -> anyhow::Result<()> {
     let mut i = 1;
     let mut flag = false;
 
-    while !flag {
+    while !flag && !ctrlc() {
         println!("{} times", i);
         let mut grad = gradient(
+            &ctrlc,
+            &mut pamc,
+            &handle,
+            channel,
             input1,
             input2,
             base_line,
             move_p,
             &constant,
-            ser1,
             measured_parameter,
         )?;
         let (da, db, dc, dd) = (grad[0], grad[1], grad[2], grad[3]);
@@ -170,7 +229,7 @@ fn main() -> anyhow::Result<()> {
                     dire[j] = Ccw;
                 }
                 movement[j] *= rate[j];
-                move_servo(ser1, dire[j], movement[j], j as u8);
+                pamc.drive(j as u8, dire[j], 1500, movement[j] as u16)?;
                 let direction_coef = if let Cw = dire[j] { 1. } else { -1. };
                 rotation[j] += direction_coef * step_size1 * rate[j];
             }
@@ -182,7 +241,15 @@ fn main() -> anyhow::Result<()> {
             d.push(rotation[3]);
             r_vec.push(r);
             sleep(Duration::from_millis(200));
-            let temp = vis_func(input1, input2, base_line, measured_parameter);
+            let temp = vis_func(
+                &ctrlc,
+                &handle,
+                channel,
+                input1,
+                input2,
+                base_line,
+                measured_parameter,
+            )?;
             result.push(temp);
             println!("Visibility: {}", temp);
             let end = Instant::now();
@@ -242,35 +309,58 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[allow(unused)]
-fn shutter(_: (), channel: u8, command: &'static str) {}
+// #[allow(unused)]
+// fn shutter(_: (), channel: u8, command: &'static str) {}
+
+// #[allow(unused)]
+// fn ave((device_name, min_set, max_set, m_time): (&'static str, i32, i32, f64)) -> f64 {
+//     // not-todo-anymore Get average of all datapoints
+//     0.0
+// }
 
 #[allow(unused)]
-fn ave((device_name, min_set, max_set, m_time): (&'static str, i32, i32, f64)) -> f64 {
-    // TODO Get average of all datapoints
-    0.0
+fn vis_func(
+    ctrlc: impl Fn() -> bool,
+    handle: &Handle<TriggerAsync>,
+    channel: ChannelNumber,
+    input1: f64,
+    input2: f64,
+    base_line: f64,
+    parameter: (&str, i32, i32, f64),
+) -> anyhow::Result<f64> {
+    handle.latch_data()?;
+    let count_current = handle.latched_acquisition_count()?;
+    while {
+        handle.latch_data()?;
+        if ctrlc() {
+            bail!("Ctrl-C");
+        }
+        let count = handle.latched_acquisition_count()?;
+        count == count_current
+    } {
+        sleep(Duration::from_millis(1));
+    }
+    let waveform = handle.get_waveform(count_current + 1, channel)?;
+    Ok(0.0)
 }
 
-#[allow(unused)]
-fn vis_func(input1: f64, input2: f64, base_line: f64, parameter: (&str, i32, i32, f64)) -> f64 {
-    // TODO measure visibility
-    0.0
-}
+// #[allow(unused)]
+// fn measurement(parameter: (&str, i32, i32, f64)) -> Vec<(f64, f64)> {
+//     // TODO get from oscilloscope
+//     vec![]
+// }
 
-#[allow(unused)]
-fn measurement(parameter: (&str, i32, i32, f64)) -> Vec<(f64, f64)> {
-    // TODO get from oscilloscope
-    vec![]
-}
-
-#[allow(unused)]
+#[allow(clippy::too_many_arguments)]
 fn gradient(
+    ctrlc: impl Fn() -> bool + Clone,
+    pamc: &mut Pamc112,
+    handle: &Handle<TriggerAsync>,
+    channel: ChannelNumber,
     input1: f64,
     input2: f64,
     base_line: f64,
     move_p: i32,
     constant: &[f64; 4],
-    ser: (),
     parameter: (&str, i32, i32, f64),
 ) -> anyhow::Result<[f64; 4]> {
     let e = 75.0;
@@ -279,20 +369,60 @@ fn gradient(
 
     let move_p = move_p as f64;
 
-    let o = vis_func(input1, input2, base_line, parameter);
+    let o = vis_func(
+        ctrlc.clone(),
+        handle,
+        channel,
+        input1,
+        input2,
+        base_line,
+        parameter,
+    )?;
     println!("Now visibility is {o:.4}");
     for i in 0..4 {
-        move_servo(ser, Cw, move_p * constant[i], i as u8); // clockwise
-        big[i] = vis_func(input1, input2, base_line, parameter);
-        move_servo(ser, Ccw, move_p, i as u8);
-        let o_temp = vis_func(input1, input2, base_line, parameter);
+        pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?; // clockwise
+        big[i] = vis_func(
+            ctrlc.clone(),
+            handle,
+            channel,
+            input1,
+            input2,
+            base_line,
+            parameter,
+        )?;
+        pamc.drive(i as u8, Ccw, 1500, move_p as u16)?;
+        let o_temp = vis_func(
+            ctrlc.clone(),
+            handle,
+            channel,
+            input1,
+            input2,
+            base_line,
+            parameter,
+        )?;
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
-        move_servo(ser, Ccw, move_p, i as u8); // Anticlockwise
-        small[i] = vis_func(input1, input2, base_line, parameter);
-        move_servo(ser, Cw, move_p * constant[i], i as u8);
-        let o_temp = vis_func(input1, input2, base_line, parameter);
+        pamc.drive(i as u8, Ccw, 1500, move_p as u16)?; // Anticlockwise
+        small[i] = vis_func(
+            ctrlc.clone(),
+            handle,
+            channel,
+            input1,
+            input2,
+            base_line,
+            parameter,
+        )?;
+        pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?;
+        let o_temp = vis_func(
+            ctrlc.clone(),
+            handle,
+            channel,
+            input1,
+            input2,
+            base_line,
+            parameter,
+        )?;
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
@@ -306,9 +436,6 @@ fn gradient(
     println!("∇Vis: {:?}", gradient);
     Ok(gradient.try_into().unwrap())
 }
-
-#[allow(unused)]
-fn move_servo(ser: (), direction: RotationDirection, movement: f64, index: u8) {}
 
 // struct DataFrame {
 //     data: Vec<Vec<f64>>,
@@ -342,4 +469,47 @@ fn move_servo(ser: (), direction: RotationDirection, movement: f64, index: u8) {
 //         }
 //         Ok(())
 //     }
+// }
+
+// struct Shutters {
+//     serial: SerialWrapper,
+// }
+//
+// impl Shutters {
+//     fn new(port: &str, timeout: Duration) -> anyhow::Result<Self> {
+//         let serial = serialport::new(port, 115200)
+//             .data_bits(DataBits::Eight)
+//             .parity(Parity::None)
+//             .stop_bits(StopBits::One)
+//             .flow_control(serialport::FlowControl::None)
+//             .timeout(timeout)
+//             .open()?;
+//         let serial = SerialWrapper::new(serial);
+//         Ok(Self { serial })
+//     }
+//
+//     fn open(&self, port: usize) -> anyhow::Result<()> {
+//         self.drive(port, OpenClose::Open)
+//     }
+//
+//     fn close(&self, port: usize) -> anyhow::Result<()> {
+//         self.drive(port, OpenClose::Close)
+//     }
+//
+//     fn drive(&self, port: usize, open_close: OpenClose) -> anyhow::Result<()> {
+//         assert!(port < 3);
+//         self.serial.write_rx.send(
+//             match open_close {
+//                 OpenClose::Open => &b"open"[..],
+//                 OpenClose::Close => &b"close"[..],
+//             }
+//             .into(),
+//         )?;
+//         Ok(())
+//     }
+// }
+//
+// enum OpenClose {
+//     Open,
+//     Close,
 // }
