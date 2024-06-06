@@ -26,8 +26,11 @@ struct Config {
     channel: u8,
     sub_channel: u8,
 
+    #[allow(unused)]
     input1: f64,
+    #[allow(unused)]
     input2: f64,
+    #[allow(unused)]
     base_line: f64,
 }
 
@@ -105,7 +108,7 @@ fn main() -> anyhow::Result<()> {
     let _bit_rate = 115200;
     let device_name = "Dev1/ai0";
     let (min_set, max_set, m_time) = (-3, 3, 0.5);
-    let measured_parameter = (device_name, min_set, max_set, m_time);
+    let _measured_parameter = (device_name, min_set, max_set, m_time);
     let e = 1e-05;
     let move_p = 10; //pulses
     let constant_a = 2.28;
@@ -140,22 +143,7 @@ fn main() -> anyhow::Result<()> {
     // shutter(ser_s, 0, "open");
     // sleep(Duration::from_secs(1));
 
-    let Config {
-        input1,
-        input2,
-        base_line,
-        ..
-    } = config;
-
-    let mut vis = vis_func(
-        &ctrlc,
-        &handle,
-        channel,
-        input1,
-        input2,
-        base_line,
-        measured_parameter,
-    )?;
+    let mut vis = vis_func(&config, &ctrlc, &handle, channel)?;
     if vis < e {
         bail!("Please improve this visibility");
     }
@@ -183,16 +171,7 @@ fn main() -> anyhow::Result<()> {
     while !flag && !ctrlc() {
         info!("{} times", i);
         let mut grad = gradient(
-            &ctrlc,
-            &mut pamc,
-            &handle,
-            channel,
-            input1,
-            input2,
-            base_line,
-            move_p,
-            &constant,
-            measured_parameter,
+            &config, &ctrlc, &mut pamc, &handle, channel, move_p, &constant,
         )?;
         let (da, db, dc, dd) = (grad[0], grad[1], grad[2], grad[3]);
         let absgrad = [da.abs(), db.abs(), dc.abs(), dd.abs()];
@@ -245,15 +224,7 @@ fn main() -> anyhow::Result<()> {
             d.push(rotation[3]);
             r_vec.push(r);
             sleep(Duration::from_millis(200));
-            let temp = vis_func(
-                &ctrlc,
-                &handle,
-                channel,
-                input1,
-                input2,
-                base_line,
-                measured_parameter,
-            )?;
+            let temp = vis_func(&config, &ctrlc, &handle, channel)?;
             result.push(temp);
             info!("Visibility: {}", temp);
             let end = Instant::now();
@@ -323,13 +294,10 @@ fn main() -> anyhow::Result<()> {
 // }
 
 fn vis_func(
+    _config: &Config,
     ctrlc: impl Fn() -> bool,
     handle: &Handle<TriggerAsync>,
     channel: ChannelNumber,
-    _input1: f64,
-    _input2: f64,
-    _base_line: f64,
-    _parameter: (&str, i32, i32, f64),
 ) -> anyhow::Result<f64> {
     handle.latch_data()?;
     let count_current = handle.latched_acquisition_count()?;
@@ -359,16 +327,13 @@ fn vis_func(
 
 #[allow(clippy::too_many_arguments)]
 fn gradient(
+    config: &Config,
     ctrlc: impl Fn() -> bool + Clone,
     pamc: &mut Pamc112,
     handle: &Handle<TriggerAsync>,
     channel: ChannelNumber,
-    input1: f64,
-    input2: f64,
-    base_line: f64,
     move_p: i32,
     constant: &[f64; 4],
-    parameter: (&str, i32, i32, f64),
 ) -> anyhow::Result<[f64; 4]> {
     let e = 75.0;
     let mut big = [0.0; 4];
@@ -376,60 +341,20 @@ fn gradient(
 
     let move_p = move_p as f64;
 
-    let o = vis_func(
-        ctrlc.clone(),
-        handle,
-        channel,
-        input1,
-        input2,
-        base_line,
-        parameter,
-    )?;
+    let o = vis_func(config, ctrlc.clone(), handle, channel)?;
     info!("Now visibility is {o:.4}");
     for i in 0..4 {
         pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?; // clockwise
-        big[i] = vis_func(
-            ctrlc.clone(),
-            handle,
-            channel,
-            input1,
-            input2,
-            base_line,
-            parameter,
-        )?;
+        big[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
         pamc.drive(i as u8, Ccw, 1500, move_p as u16)?;
-        let o_temp = vis_func(
-            ctrlc.clone(),
-            handle,
-            channel,
-            input1,
-            input2,
-            base_line,
-            parameter,
-        )?;
+        let o_temp = vis_func(config, ctrlc.clone(), handle, channel)?;
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
         pamc.drive(i as u8, Ccw, 1500, move_p as u16)?; // Anticlockwise
-        small[i] = vis_func(
-            ctrlc.clone(),
-            handle,
-            channel,
-            input1,
-            input2,
-            base_line,
-            parameter,
-        )?;
+        small[i] = vis_func(config, ctrlc.clone(), handle, channel)?;
         pamc.drive(i as u8, Cw, 1500, (move_p * constant[i]) as u16)?;
-        let o_temp = vis_func(
-            ctrlc.clone(),
-            handle,
-            channel,
-            input1,
-            input2,
-            base_line,
-            parameter,
-        )?;
+        let o_temp = vis_func(config, ctrlc.clone(), handle, channel)?;
         if (o - o_temp).abs() > e {
             bail!("Error: I cannot come back to the original point. ({o:.4}, {o_temp:.4})",);
         }
