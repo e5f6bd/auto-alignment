@@ -1,210 +1,309 @@
-use std::path::PathBuf;
+use anyhow::bail;
+use clap::Parser;
+use std::{
+    path::PathBuf,
+    thread::sleep,
+    time::{Duration, Instant},
+};
+use serde::Deserialize;
 
+#[derive(Parser)]
 struct Opts {
     config_path: PathBuf,
 }
 
+#[derive(Deserialize)]
+struct Config {}
+
 fn main() -> anyhow::Result<()> {
-    // // improving visibility
-    // start = time.time()
-    // time.sleep(2)
-    // shutter(ser_s, 0, "close") // signal light is port 0
-    // shutter(ser_s, 1, "close") // LO light is port 1
-    // shutter(ser_s, 2, "close")
-    // shutter(ser_s, 3, "close")
-    // wheel(ser_w, 6) // Attention: must weaken signal light
-    // baseLine = Ave(measured_parameter)
-    // time.sleep(2)
-    // shutter(ser_s, 2, "open")
-    // shutter(ser_s, 0, "open")
-    // time.sleep(1)
-    // ave1 = Ave(measured_parameter)
-    // time.sleep(m_time)
-    // Input1 = ave1-baseLine
-    // shutter(ser_s, 1, "open")    
-    // shutter(ser_s, 0, "close")
-    // time.sleep(1)
-    // ave2 = Ave(measured_parameter)
-    // Input2 = ave2-baseLine
-    // shutter(ser_s, 0, "open")
-    // time.sleep(1)
-    // 
-    // 
-    // // COM_s = "COM3" // for optical shutter
-    // // COM = "COM10" // for improving visibility
-    // bitRate = 115200
-    // device_name = "Dev1/ai0"
-    // min_set, max_set, m_time= -3, 3, 0.5
-    // measured_parameter = (device_name, min_set, max_set, m_time)
-    // e = 1e-05
-    // move_p = 10 //pulses
-    // constantA = 2.28
-    // constantB = 2.85
-    // constantC = 1.33
-    // constantD = 2.8
-    // constant = np.array([constantA, constantB, constantC, constantD])
-    // 
-    // A = []
-    // B = []
-    // C = []
-    // D = []
-    // Z = []
-    // T = []
-    // time.sleep(2)
-    // shutter(ser_s, 3, "close")
-    // shutter(ser_s, 0, "close") // signal light is port 0
-    // shutter(ser_s, 1, "close") // LO light is port 1
-    // baseLine = Ave(measured_parameter)
-    // time.sleep(m_time)
-    // shutter(ser_s, 0, "open")
-    // time.sleep(1)
-    // ave1 = Ave(measured_parameter)
-    // time.sleep(m_time)
-    // Input1 = ave1-baseLine
-    // shutter(ser_s, 1, "open")    
-    // shutter(ser_s, 0, "close")
-    // time.sleep(1)
-    // ave2 = Ave(measured_parameter)
-    // Input2 = ave2-baseLine
-    // shutter(ser_s, 0, "open")
-    // time.sleep(1)
-    // 
-    // vis = Vis(Input1, Input2, baseLine, measured_parameter)
-    // if vis < e {
-    //     print("Please improve this visiblity")
-    //     exit(0)
-    // }
-    // t = datetime.datetime.now()
-    // t = t.strftime('%H%M%S')
-    // dotmap = Measurement(measured_parameter)
-    // df = pd.DataFrame(dotmap, columns=['Time', 'Voltage'])
-    // np.savetxt(r'\Users\kawas\Desktop\Jupyter\auto-alignment_testcode\20240125\visibility\f'+t+'initialWave.csv', df, delimiter=',')
-    // 
-    // rotation = np.zeros(4)
-    // end = time.time()
-    // Time = end - start
-    // 
-    // A.append(rotation[0])
-    // B.append(rotation[1])
-    // C.append(rotation[2])
-    // D.append(rotation[3])
-    // Z.append([vis])
-    // T.append(Time)
-    // i = 1
-    // flag = False
-    // while True {
-    //     if flag {
-    //         break
-    //     }
-    //     print(f"{i} times")
-    //     //----グラディエント測定----
-    //     grad = Gradient(Input1, Input2, baseLine, move_p, constant, ser1, measured_parameter)
-    //     da = grad[0]
-    //     db = grad[1]
-    //     dc = grad[2]
-    //     dd = grad[3]
-    //     absgrad = list(map(abs, grad))
-    //     index = absgrad.index(max(absgrad))
-    //     if abs(da) < e and abs(db) < e and abs(dc) < e and abs(dd) < e {
-    //         print("Program finished") //終了条件
-    //         break
-    //     }
-    //     rate = np.full(4, 1.0)
-    //     for k in range(1, 4) {
-    //         rate[k+index-4] = abs(grad[index+k-4]/grad[index])
-    //     }
-    // 
-    //     R = []
-    //     result = []
-    //     step_size = int(16-(2*(i-1))) //pulses
-    //     step_size1 = step_size 
-    // 
-    //     r = 0
-    //     dirr = 1
-    //     R.append(r)
-    //     Opt = Vis(Input1, Input2, baseLine, measured_parameter)
-    //     result.append(Opt)
-    //     if Opt > 99 {
-    //         break
-    //     } else {
-    //         print("Next Optimization!!")
-    //     }
-    // 
-    //     while True {
-    //         dire = np.array([1,1,1,1])
-    //         movement = np.full(4, step_size1)
-    //         for j in range(4) {
-    //             if grad[j] > 0 {
-    //                 dire[j] = 1
-    //                 movement[j] = step_size1*constant[j]
-    //             } else {
-    //                 dire[j] = -1
-    //             }
-    //             movement[j] = movement[j]*rate[j]
-    //             move(ser1, dire[j], movement[j], j)
-    //             rotation[j] = rotation[j] + int(dire[j]*step_size1*rate[j])
-    //         }
-    // 
-    //         r = r + dirr*step_size1
-    //         A.append(rotation[0])
-    //         B.append(rotation[1])
-    //         C.append(rotation[2])
-    //         D.append(rotation[3])
-    //         R.append(r)
-    //         time.sleep(0.2)
-    //         Temp = Vis(Input1, Input2, baseLine, measured_parameter)
-    //         result.append(Temp)
-    //         print(f"Visibility: {Temp}")
-    //         end = time.time()
-    //         Time = end - start
-    //         T.append(Time)
-    //         //終了条件
-    //         if len(R) >= 10 {
-    //             break
-    //         }
-    //         if abs(Opt-Temp) < 0.1 {
-    //             break
-    //         }
-    //         if Opt <= Temp {
-    //             Opt = Temp
-    //         } else {
-    //             dirr = -1 * dirr
-    //             step_size1 = step_size1 * 0.9
-    //             if step_size1 < 1 {
-    //                 break
-    //             }
-    //             Opt = Temp
-    //             grad = -grad
-    //         }
-    //         if Opt > 99 {
-    //             flag = True
-    //             print("visibility is over 99%, program finish")
-    //             break
-    //         }
-    // 
-    //     N = np.arange(len(R))
-    //     data = np.c_[N, R, result]
-    //     raw_data2 = pd.DataFrame(data, columns=['N', 'R', 'Visibility'])
-    //     np.savetxt(r'\Users\kawas\Desktop\Jupyter\auto-alignment_testcode\20240125\visibility\f'+t+'step'+str(i)+'.csv', raw_data2, delimiter=',')
-    //     result.pop(0)
-    //     Z.append(result)
-    //     if step_size < 2 {
-    //         break
-    //     }
-    //     i = i + 1
-    // }
-    // 
-    // Z = sum(Z, [])
-    // n = np.arange(len(Z))
-    // print(f"Final Visibility: {Z[-1]}")
-    // Result = np.c_[n, T, A, B, C, D, Z]
-    // raw_data3 = pd.DataFrame(Result, columns=['N', 'T', 'A', 'B', 'C', 'D', 'Visibility'])
-    // end = time.time()
-    // Time = end - start
-    // np.savetxt(r'\Users\kawas\Desktop\Jupyter\auto-alignment_testcode\20240125\visibility\f' +t + 'Time'+str(round(Time))+ '.csv', raw_data3, delimiter=',')
-    // 
-    // 
-    // print(Time)
+    let ser_s = ();
+    let ser1 = ();
+
+    let _com1 = "COM4"; // for coupling reflection light into photodiode
+    let _com2 = "COM5"; // for half beam splitter
+    let _com3 = "COM10"; // for improving visibility
+    let _com_s = "COM3"; // for optical shutter
+    let _com_w = "COM9"; // for motorized filter wheel
+    let _bit_rate = 115200;
+    let device_name = "Dev1/ai0"; // for digitizer
+    let (min_set, max_set, m_time, m_timev) = (-3, 3, 0.3, 1.0); // measurement range and time of digitizer
+    let measured_parameter = (device_name, min_set, max_set, m_time);
+    let _measured_parameterv = (device_name, min_set, max_set, m_timev);
+
+    // improving visibility
+    let start = Instant::now();
+    sleep(Duration::from_secs(2));
+    shutter(ser_s, 0, "close"); // signal light is port 0
+    shutter(ser_s, 1, "close"); // LO light is port 1
+    shutter(ser_s, 2, "close");
+    shutter(ser_s, 3, "close");
+    // Not needed for now
+    // wheel(ser_w, 6); // Attention: must weaken signal light
+    let base_line = ave(measured_parameter);
+    sleep(Duration::from_secs(2));
+    shutter(ser_s, 2, "open");
+    shutter(ser_s, 0, "open");
+    sleep(Duration::from_secs(1));
+    let ave1 = ave(measured_parameter);
+    sleep(Duration::from_secs_f64(m_time));
+    let input1 = ave1 - base_line;
+    shutter(ser_s, 1, "open");
+    shutter(ser_s, 0, "close");
+    sleep(Duration::from_secs(1));
+    let ave2 = ave(measured_parameter);
+    let input2 = ave2 - base_line;
+    shutter(ser_s, 0, "open");
+    sleep(Duration::from_secs(1));
+
+    // COM_s = "COM3" // for optical shutter
+    // COM = "COM10" // for improving visibility
+    let _bit_rate = 115200;
+    let device_name = "Dev1/ai0";
+    let (min_set, max_set, m_time) = (-3, 3, 0.5);
+    let measured_parameter = (device_name, min_set, max_set, m_time);
+    let e = 1e-05;
+    let move_p = 10; //pulses
+    let constant_a = 2.28;
+    let constant_b = 2.85;
+    let constant_c = 1.33;
+    let constant_d = 2.8;
+    let constant = [constant_a, constant_b, constant_c, constant_d];
+
+    let mut a = vec![];
+    let mut b = vec![];
+    let mut c = vec![];
+    let mut d = vec![];
+    let mut z = vec![];
+    let mut t = vec![];
+    sleep(Duration::from_secs(2));
+    shutter(ser_s, 3, "close");
+    shutter(ser_s, 0, "close"); // signal light is port 0
+    shutter(ser_s, 1, "close"); // LO light is port 1
+    let base_line = ave(measured_parameter);
+    sleep(Duration::from_secs_f64(m_time));
+    shutter(ser_s, 0, "open");
+    sleep(Duration::from_secs(1));
+    let ave1 = ave(measured_parameter);
+    sleep(Duration::from_secs_f64(m_time));
+    let _input_1 = ave1 - base_line;
+    shutter(ser_s, 1, "open");
+    shutter(ser_s, 0, "close");
+    sleep(Duration::from_secs(1));
+    let ave2 = ave(measured_parameter);
+    let _input_2 = ave2 - base_line;
+    shutter(ser_s, 0, "open");
+    sleep(Duration::from_secs(1));
+
+    let mut vis = vis_func(input1, input2, base_line, measured_parameter);
+    if vis < e {
+        bail!("Please improve this visibility");
+    }
+    // let date = Local::now().format("%H%M%S").to_string();
+    // let dotmap = measurement(measured_parameter);
+    // TODO Save
+    // let df = DataFrame::new(dotmap);
+    // let path = Path::new(&format!("f{}initial_wave.csv", date));
+    // let mut file = File::create(&path).unwrap();
+    // df.write_csv(&mut file).unwrap();
+
+    let mut rotation = [0.0; 4];
+    let end = Instant::now();
+    let time = end.duration_since(start).as_secs_f64();
+
+    a.push(rotation[0]);
+    b.push(rotation[1]);
+    c.push(rotation[2]);
+    d.push(rotation[3]);
+    z.push(vec![vis]);
+    t.push(time);
+    let mut i = 1;
+    let mut flag = false;
+
+    while !flag {
+        println!("{} times", i);
+        let mut grad = gradient(
+            input1,
+            input2,
+            base_line,
+            move_p,
+            &constant,
+            ser1,
+            measured_parameter,
+        );
+        let (da, db, dc, dd) = (grad[0], grad[1], grad[2], grad[3]);
+        let absgrad = [da.abs(), db.abs(), dc.abs(), dd.abs()];
+        let index = (0..4).fold(0, |i, j| if absgrad[i] > absgrad[j] { i } else { j });
+
+        if da.abs() < e && db.abs() < e && dc.abs() < e && dd.abs() < e {
+            println!("Program finished");
+            break;
+        }
+
+        let mut rate = [1.0; 4];
+        for k in 1..4 {
+            rate[k + index - 4] = (grad[index + k - 4] / grad[index]).abs();
+        }
+
+        let mut r = 0.0;
+        let mut dirr = 1.0;
+        let mut r_vec = vec![r];
+        let mut result = vec![];
+        let step_size = (16 - 2 * (i - 1)) as f64;
+        let mut step_size1 = step_size;
+
+        result.push(vis);
+        if vis > 99.0 {
+            break;
+        } else {
+            println!("Next Optimization!!");
+        }
+
+        loop {
+            let mut dire = [1.0; 4];
+            let mut movement = [step_size1; 4];
+            for j in 0..4 {
+                if grad[j] > 0.0 {
+                    dire[j] = 1.0;
+                    movement[j] = step_size1 * constant[j];
+                } else {
+                    dire[j] = -1.0;
+                }
+                movement[j] *= rate[j];
+                move_servo(ser1, dire[j], movement[j], j as u8);
+                rotation[j] += dire[j] * step_size1 * rate[j];
+            }
+
+            r += dirr * step_size1;
+            a.push(rotation[0]);
+            b.push(rotation[1]);
+            c.push(rotation[2]);
+            d.push(rotation[3]);
+            r_vec.push(r);
+            sleep(Duration::from_millis(200));
+            let temp = vis_func(input1, input2, base_line, measured_parameter);
+            result.push(temp);
+            println!("Visibility: {}", temp);
+            let end = Instant::now();
+            let time = end.duration_since(start).as_secs_f64();
+            t.push(time);
+
+            if r_vec.len() >= 10 || (vis - temp).abs() < 0.1 {
+                break;
+            }
+
+            if vis <= temp {
+                vis = temp;
+            } else {
+                dirr = -dirr;
+                step_size1 *= 0.9;
+                if step_size1 < 1.0 {
+                    break;
+                }
+                vis = temp;
+                grad = [-grad[0], -grad[1], -grad[2], -grad[3]];
+            }
+
+            if vis > 99.0 {
+                flag = true;
+                println!("Visibility is over 99%, program finish");
+                break;
+            }
+        }
+
+        // TODO save
+        // let n = (0..r_vec.len()).map(|x| x as f64).collect::<Vec<_>>();
+        // let data = vec![&n, &r_vec, &result].concat();
+        // let raw_data2 = DataFrame::new(data);
+        // let path = Path::new(&format!("f{}step{}.csv", t, i));
+        // let mut file = File::create(&path).unwrap();
+        // raw_data2.write_csv(&mut file).unwrap();
+        result.pop();
+        z.push(result);
+
+        if step_size < 2.0 {
+            break;
+        }
+        i += 1;
+    }
+
+    let z: Vec<_> = z.into_iter().flatten().collect();
+    // let n = (0..z.len()).collect::<Vec<_>>();
+    println!("Final Visibility: {}", z.last().unwrap());
+    // TODO save
+    // let result = vec![&n, &t, &a, &b, &c, &d, &z].concat();
+    // let raw_data3 = DataFrame::new(result);
+    // let path = Path::new(&format!("f{}Time{}.csv", t, time.round()));
+    // let mut file = File::create(&path).unwrap();
+    // raw_data3.write_csv(&mut file).unwrap();
+    println!("{}", time);
 
     Ok(())
 }
+
+#[allow(unused)]
+fn shutter(_: (), channel: u8, command: &'static str) {}
+
+#[allow(unused)]
+fn ave((device_name, min_set, max_set, m_time): (&'static str, i32, i32, f64)) -> f64 {
+    todo!()
+}
+
+#[allow(unused)]
+fn vis_func(input1: f64, input2: f64, base_line: f64, parameter: (&str, i32, i32, f64)) -> f64 {
+    0.0
+}
+
+#[allow(unused)]
+fn measurement(parameter: (&str, i32, i32, f64)) -> Vec<(f64, f64)> {
+    vec![]
+}
+
+#[allow(unused)]
+fn gradient(
+    input1: f64,
+    input2: f64,
+    base_line: f64,
+    move_p: i32,
+    constant: &[f64; 4],
+    ser: (),
+    parameter: (&str, i32, i32, f64),
+) -> [f64; 4] {
+    [0.0, 0.0, 0.0, 0.0]
+}
+
+#[allow(unused)]
+fn move_servo(ser: (), direction: f64, movement: f64, index: u8) {}
+
+// struct DataFrame {
+//     data: Vec<Vec<f64>>,
+//     columns: Vec<String>,
+// }
+//
+// impl DataFrame {
+//     fn new(data: Vec<f64>) -> DataFrame {
+//         let columns: Vec<_> = vec!["N", "R", "Visibility"]
+//             .iter()
+//             .map(|s| s.to_string())
+//             .collect();
+//         let rows = data.len() / columns.len();
+//         let mut data_matrix = vec![vec![0.0; columns.len()]; rows];
+//         for i in 0..rows {
+//             for j in 0..columns.len() {
+//                 data_matrix[i][j] = data[i * columns.len() + j];
+//             }
+//         }
+//         DataFrame {
+//             data: data_matrix,
+//             columns,
+//         }
+//     }
+//
+//     fn write_csv(&self, file: &mut File) -> std::io::Result<()> {
+//         writeln!(file, "{}", self.columns.join(","))?;
+//         for row in &self.data {
+//             let row_str: Vec<String> = row.iter().map(|v| v.to_string()).collect();
+//             writeln!(file, "{}", row_str.join(","))?;
+//         }
+//         Ok(())
+//     }
+// }

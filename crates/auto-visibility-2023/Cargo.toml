@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
+chrono = "0.4.38"
 clap = { version = "4.5.4", features = ["derive"] }
 dl950acqapi = { version = "0.1.0", path = "../dl950acqapi" }
 fs-err = "2.11.0"
