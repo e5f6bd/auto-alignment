@@ -7,8 +7,8 @@ use chrono::{DateTime, NaiveDateTime};
 use connection_mode::{ConnectionMode, FreeRun, TriggerAsync, TriggerMode, TriggerSync};
 use dl950acqapi_sys::{
     ScCloseInstrument, ScExit, ScGetAcqCount, ScGetAcqData, ScGetAcqDataLength, ScGetLatchAcqCount,
-    ScInit, ScLatchData, ScOpenInstrument, ScSetAcqCount, ScStart, ScStop, SC_ERROR, SC_SUCCESS,
-    SC_WIRE_HISLIP, SC_WIRE_USBTMC, SC_WIRE_VISAUSB, SC_WIRE_VXI11,
+    ScInit, ScLatchData, ScOpenInstrument, ScResumeAcquisition, ScSetAcqCount, ScStart, ScStop,
+    SC_ERROR, SC_SUCCESS, SC_WIRE_HISLIP, SC_WIRE_USBTMC, SC_WIRE_VISAUSB, SC_WIRE_VXI11,
 };
 use thiserror::Error;
 
@@ -141,7 +141,7 @@ pub mod connection_mode {
     }
 
     #[sealed]
-    pub trait TriggerMode {}
+    pub trait TriggerMode: ConnectionMode {}
     #[sealed]
     impl TriggerMode for TriggerSync {}
     #[sealed]
@@ -302,6 +302,12 @@ impl<T: TriggerMode> Handle<T> {
 
     pub fn set_acquisition_index(&self, index: i64) -> Result<(), Error> {
         check(unsafe { ScSetAcqCount(self.0, index) })
+    }
+}
+
+impl Handle<TriggerSync> {
+    pub fn resume_trigger(&self) -> Result<(), Error> {
+        check(unsafe { ScResumeAcquisition(self.0) })
     }
 }
 
