@@ -7,6 +7,7 @@ use polyfit_rs::polyfit_rs::polyfit;
 #[derive(Debug)]
 pub struct Params<'a> {
     pub waveform: &'a [f64],
+    pub exclude_threshold: usize,
 }
 
 pub fn calculate(params: Params) -> Option<f64> {
@@ -29,7 +30,7 @@ pub fn calculate(params: Params) -> Option<f64> {
         }
 
         let (is_min, is_max) = bound(segment[0]);
-        if !(is_min || is_max) || segment.len() < 20 {
+        if !(is_min || is_max) || segment.len() < params.exclude_threshold {
             continue;
         }
         let x = (0..segment.len()).map(|x| x as f64).collect_vec();

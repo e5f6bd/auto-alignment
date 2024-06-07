@@ -7,8 +7,12 @@ use dl950acqapi::{Api, ChannelNumber, WireType::Vxi11};
 #[derive(Parser)]
 struct Opts {
     ip_address: IpAddr,
+    channel: u8,
+    sub_channel: u8,
     #[clap(long)]
     repeat: bool,
+    #[clap(long, default_value = "20")]
+    exclude_threshold: usize,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -18,7 +22,7 @@ fn main() -> anyhow::Result<()> {
     let handle = api.open_trigger_async(Vxi11, &opts.ip_address.to_string())?;
     handle.start()?;
 
-    let channel = ChannelNumber::new(5, 1);
+    let channel = ChannelNumber::new(opts.channel, opts.sub_channel);
 
     let (ctrlc_rx, ctrlc_tx) = mpsc::channel();
     ctrlc::set_handler(move || {
@@ -44,6 +48,7 @@ fn main() -> anyhow::Result<()> {
         };
         calculate(Params {
             waveform: &waveform.iter().map(|&x| x as f64).collect::<Vec<_>>(),
+            exclude_threshold: opts.exclude_threshold,
         });
         if !opts.repeat || ctrlc() {
             break;
