@@ -12,7 +12,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use clap::Parser;
-use fs_err::File;
+use fs_err::OpenOptions;
 use log::info;
 use pamc112::{Pamc112, RotationDirection};
 use radians::{Angle, Deg64, Rad64};
@@ -46,26 +46,35 @@ fn main() -> anyhow::Result<()> {
         ctrlc::set_handler(move || finish.store(true, SeqCst))?;
     }
 
-    let initial = measure(&mut tm2070)?;
-    let threshold = Deg64::new(0.5).rad();
-    let condition = |angle: [Rad64; 2]| angle.into_iter().all(|x| angle_lt(x, threshold));
-    if !condition(initial) {
-        bail!("Already out of bounds");
-    }
-    let mut record = vec![initial];
-    while {
+    for _ in 0..5 {
         pamc.drive(opts.channel, opts.direction, 1500, opts.step)?;
-        sleep(Duration::from_secs_f64(0.5));
-        let res = measure(&mut tm2070)?;
-        record.push(res);
-        info!("{:?}", res.map(|x| x.deg()));
-        condition(res) && !finish.load(SeqCst)
-    } {}
-
-    let mut file = BufWriter::new(File::create(opts.output_path)?);
-    for [x, y] in record {
-        writeln!(file, "{}\t{}", x.val(), y.val())?;
+        measure(&mut tm2070)?;
     }
+    // let initial = measure(&mut tm2070)?;
+    // let threshold = Deg64::new(0.5).rad();
+    // let condition = |angle: [Rad64; 2]| angle.into_iter().all(|x| angle_lt(x, threshold));
+    // if !condition(initial) {
+    //     bail!("Already out of bounds");
+    // }
+    // let mut record = vec![initial];
+    // while {
+    //     pamc.drive(opts.channel, opts.direction, 1500, opts.step)?;
+    //     sleep(Duration::from_secs_f64(0.5));
+    //     let res = measure(&mut tm2070)?;
+    //     record.push(res);
+    //     info!("{:?}", res.map(|x| x.deg()));
+    //     condition(res) && !finish.load(SeqCst)
+    // } {}
+
+    // let mut file = BufWriter::new(
+    //     OpenOptions::new()
+    //         .create_new(true)
+    //         .write(true)
+    //         .open(opts.output_path)?,
+    // );
+    // for [x, y] in record {
+    //     writeln!(file, "{}\t{}", x.val(), y.val())?;
+    // }
 
     Ok(())
 }
@@ -79,16 +88,11 @@ where
 }
 
 fn measure(tm2070: &mut Tm2070) -> anyhow::Result<[Rad64; 2]> {
-    let handle = tm2070.continuous_1(None)?;
-    let stream = repeat_with(|| {
-        sleep(Duration::from_secs_f64(1. / 60.));
-        handle.iter()
-    });
-    let count = 20;
+    let count = 120;
     let mut x = 0.0;
     let mut y = 0.0;
-    for data in stream.flatten().take(20) {
-        let data = data?;
+    for _ in 0..count {
+        let data = tm2070.single_1()?;
         x += data.x.context("ND")?.value().val();
         y += data.y.context("ND")?.value().val();
     }
