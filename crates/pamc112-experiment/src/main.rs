@@ -29,7 +29,7 @@ struct Opts {
     channel: u8,
     direction: RotationDirection,
     step: u16,
-    output_path: PathBuf,
+    output_path: String,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -50,6 +50,37 @@ fn main() -> anyhow::Result<()> {
         ctrlc::set_handler(move || finish.store(true, SeqCst))?;
     }
 
+    for i in 0..10 {
+        info!("=========== STEP {i} ===========");
+        make_x_zero(&mut tm2070, &mut pamc, &opts)?;
+
+        let initial = measure(&mut tm2070)?;
+        let threshold = Deg64::new(0.5).rad();
+        let condition = |angle: [Rad64; 2]| angle.into_iter().all(|x| angle_lt(x, threshold));
+        let mut record = vec![initial];
+        while {
+            pamc.drive(opts.channel, opts.direction, 1500, opts.step)?;
+            sleep(Duration::from_secs_f64(0.15));
+            let res = measure(&mut tm2070)?;
+            record.push(res);
+            condition(res) && !finish.load(SeqCst)
+        } {}
+
+        let mut file = BufWriter::new(
+            OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(format!("{}{i}", opts.output_path))?,
+        );
+        for [x, y] in record {
+            writeln!(file, "{}\t{}", x.val(), y.val())?;
+        }
+    }
+
+    Ok(())
+}
+
+fn make_x_zero(tm2070: &mut Tm2070, pamc: &mut Pamc112, opts: &Opts) -> anyhow::Result<()> {
     let mut x = || anyhow::Ok(tm2070.single_1()?.x.context("ND")?.value());
     let mut drive = |step: i16| match step.cmp(&0) {
         Ordering::Less => pamc.drive(opts.channel, Ccw, 1500, step.unsigned_abs()),
@@ -76,34 +107,6 @@ fn main() -> anyhow::Result<()> {
         drive(1)?;
         sleep();
     }
-
-
-    // let initial = measure(&mut tm2070)?;
-    // let threshold = Deg64::new(0.5).rad();
-    // let condition = |angle: [Rad64; 2]| angle.into_iter().all(|x| angle_lt(x, threshold));
-    // if !condition(initial) {
-    //     bail!("Already out of bounds");
-    // }
-    // let mut record = vec![initial];
-    // while {
-    //     pamc.drive(opts.channel, opts.direction, 1500, opts.step)?;
-    //     sleep(Duration::from_secs_f64(0.5));
-    //     let res = measure(&mut tm2070)?;
-    //     record.push(res);
-    //     info!("{:?}", res.map(|x| x.deg()));
-    //     condition(res) && !finish.load(SeqCst)
-    // } {}
-
-    // let mut file = BufWriter::new(
-    //     OpenOptions::new()
-    //         .create_new(true)
-    //         .write(true)
-    //         .open(opts.output_path)?,
-    // );
-    // for [x, y] in record {
-    //     writeln!(file, "{}\t{}", x.val(), y.val())?;
-    // }
-
     Ok(())
 }
 
@@ -116,7 +119,7 @@ where
 }
 
 fn measure(tm2070: &mut Tm2070) -> anyhow::Result<[Rad64; 2]> {
-    let count = 120;
+    let count = 20;
     let mut x = 0.0;
     let mut y = 0.0;
     for _ in 0..count {
