@@ -1,4 +1,5 @@
 use std::{
+    cmp::Ordering,
     io::{BufWriter, Write},
     iter::repeat_with,
     path::PathBuf,
@@ -13,8 +14,11 @@ use std::{
 use anyhow::{bail, Context};
 use clap::Parser;
 use fs_err::OpenOptions;
-use log::info;
-use pamc112::{Pamc112, RotationDirection};
+use log::{info, warn};
+use pamc112::{
+    Pamc112,
+    RotationDirection::{self, *},
+};
 use radians::{Angle, Deg64, Rad64};
 use tm2070::Tm2070;
 
@@ -46,10 +50,34 @@ fn main() -> anyhow::Result<()> {
         ctrlc::set_handler(move || finish.store(true, SeqCst))?;
     }
 
-    for _ in 0..5 {
-        pamc.drive(opts.channel, opts.direction, 1500, opts.step)?;
-        measure(&mut tm2070)?;
+    let mut x = || anyhow::Ok(tm2070.single_1()?.x.context("ND")?.value());
+    let mut drive = |step: i16| match step.cmp(&0) {
+        Ordering::Less => pamc.drive(opts.channel, Ccw, 1500, step.unsigned_abs()),
+        Ordering::Equal => {
+            warn!("Driving 0 steps");
+            Ok(())
+        }
+        Ordering::Greater => pamc.drive(opts.channel, Cw, 1500, step.unsigned_abs()),
+    };
+    let sleep = || sleep(Duration::from_secs_f64(0.15));
+    while angle_lt(Rad64::new(-0.5e-3), x()?) {
+        drive(-100)?;
+        sleep();
     }
+    while angle_lt(x()?, Rad64::new(-0.1e-3)) {
+        drive(30)?;
+        sleep();
+    }
+    while angle_lt(x()?, Rad64::new(-0.03e-3)) {
+        drive(5)?;
+        sleep();
+    }
+    while angle_lt(x()?, Rad64::new(0.)) {
+        drive(1)?;
+        sleep();
+    }
+
+
     // let initial = measure(&mut tm2070)?;
     // let threshold = Deg64::new(0.5).rad();
     // let condition = |angle: [Rad64; 2]| angle.into_iter().all(|x| angle_lt(x, threshold));
