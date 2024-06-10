@@ -1,8 +1,6 @@
 use std::{
     cmp::Ordering,
     io::{BufWriter, Write},
-    iter::repeat_with,
-    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering::SeqCst},
         Arc,
@@ -14,7 +12,7 @@ use std::{
 use anyhow::{bail, Context};
 use clap::Parser;
 use fs_err::OpenOptions;
-use log::{info, warn};
+use log::warn;
 use pamc112::{
     Pamc112,
     RotationDirection::{self, *},
@@ -29,6 +27,9 @@ struct Opts {
     channel: u8,
     direction: RotationDirection,
     step: u16,
+    other_channel: u8,
+    other_direction: RotationDirection,
+    other_step: u16,
     output_path: String,
 }
 
@@ -44,37 +45,48 @@ fn main() -> anyhow::Result<()> {
     let mut pamc = Pamc112::new(&opts.pamc_port, Duration::from_secs(1))?;
     let mut tm2070 = Tm2070::new(&opts.tm2070_port)?;
 
-    let finish = Arc::new(AtomicBool::new(false));
+    let ctrlc = Arc::new(AtomicBool::new(false));
     {
-        let finish = finish.clone();
-        ctrlc::set_handler(move || finish.store(true, SeqCst))?;
+        let ctrlc = ctrlc.clone();
+        ctrlc::set_handler(move || ctrlc.store(true, SeqCst))?;
     }
 
-    for i in 0..10 {
-        info!("=========== STEP {i} ===========");
+    let threshold = Deg64::new(0.5).rad();
+    let within_threshold =
+        |angle: [Rad64; 2]| angle.into_iter().all(|x| angle_lt(x.mag(), threshold));
+    let mut i = 0;
+    while within_threshold(measure(&mut tm2070, 1)?) && !ctrlc.load(SeqCst) {
         make_x_zero(&mut tm2070, &mut pamc, &opts)?;
 
-        let initial = measure(&mut tm2070)?;
-        let threshold = Deg64::new(0.5).rad();
-        let condition = |angle: [Rad64; 2]| angle.into_iter().all(|x| angle_lt(x, threshold));
+        let count = 20;
+        let initial = measure(&mut tm2070, count)?;
         let mut record = vec![initial];
         while {
             pamc.drive(opts.channel, opts.direction, 1500, opts.step)?;
             sleep(Duration::from_secs_f64(0.15));
-            let res = measure(&mut tm2070)?;
+            let res = measure(&mut tm2070, count)?;
             record.push(res);
-            condition(res) && !finish.load(SeqCst)
+            within_threshold(res) && !ctrlc.load(SeqCst)
         } {}
 
         let mut file = BufWriter::new(
             OpenOptions::new()
                 .create_new(true)
                 .write(true)
-                .open(format!("{}{i}", opts.output_path))?,
+                .open(format!("{}_{i:03}.tsv", opts.output_path))?,
         );
         for [x, y] in record {
             writeln!(file, "{}\t{}", x.val(), y.val())?;
         }
+
+        i += 1;
+        pamc.drive(
+            opts.other_channel,
+            opts.other_direction,
+            1500,
+            opts.other_step,
+        )?;
+        sleep(Duration::from_secs_f64(0.15));
     }
 
     Ok(())
@@ -118,8 +130,7 @@ where
     x.val() < y.val()
 }
 
-fn measure(tm2070: &mut Tm2070) -> anyhow::Result<[Rad64; 2]> {
-    let count = 20;
+fn measure(tm2070: &mut Tm2070, count: usize) -> anyhow::Result<[Rad64; 2]> {
     let mut x = 0.0;
     let mut y = 0.0;
     for _ in 0..count {
