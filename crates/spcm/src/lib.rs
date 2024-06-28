@@ -6,6 +6,7 @@ use std::{
 };
 
 use bstr::BString;
+use num_enum::TryFromPrimitiveError;
 use spcm_sys::*;
 use thiserror::Error;
 
@@ -183,7 +184,7 @@ impl Device {
 }
 
 #[derive(Debug, Error)]
-pub enum DeviceCardTypeError {
+pub enum DeviceCardTypeStrError {
     #[error("API returned an error: {0:?}")]
     ApiError(#[from] Error),
     #[error("Card type does not contain a null byte: {0:?}")]
@@ -193,7 +194,7 @@ pub enum DeviceCardTypeError {
 }
 
 impl Device {
-    pub fn card_type_str(&self) -> Result<String, DeviceCardTypeError> {
+    pub fn card_type_str(&self) -> Result<String, DeviceCardTypeStrError> {
         // We assume that 1024 bytes is sufficiently long for card type.
         let mut buffer = vec![0; 1024];
         let buffer_ptr = buffer.as_mut_ptr() as *mut c_void;
@@ -203,12 +204,32 @@ impl Device {
         })?;
 
         let Some(len) = buffer.iter().position(|&x| x == 0) else {
-            return Err(DeviceCardTypeError::NullCharacterNotPresent(BString::new(
-                buffer,
-            )));
+            return Err(DeviceCardTypeStrError::NullCharacterNotPresent(
+                BString::new(buffer),
+            ));
         };
         buffer.truncate(len);
 
         Ok(String::from_utf8(buffer)?)
+    }
+}
+
+pub mod card_type;
+#[derive(Debug, Error)]
+pub enum DeviceCardTypeError {
+    #[error("API returned an error: {0:?}")]
+    ApiError(#[from] Error),
+    #[error("Unknown card type: {0:?}")]
+    UnknownCardTypeError(#[from] TryFromPrimitiveError<card_type::CardType>),
+}
+impl Device {
+    pub fn card_type(&self) -> Result<card_type::CardType, DeviceCardTypeError> {
+        let ret = {
+            let mut ret = 0;
+            let ret_ptr = (&mut ret) as _;
+            self.check(unsafe { spcm_dwGetParam_i32(self.0, SPC_PCITYP as _, ret_ptr) })?;
+            ret
+        };
+        Ok(ret.try_into()?)
     }
 }

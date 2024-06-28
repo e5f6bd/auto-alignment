@@ -15,8 +15,7 @@ fn main() -> anyhow::Result<()> {
     println!("Hello!");
 
     let device = Device::open(&opts.address)?;
-    let card_type = device.card_type_str()?;
-    println!("{card_type:?}");
+    println!("{:?} ({:?})", device.card_type()?, device.card_type_str()?);
     sleep(Duration::from_secs(1));
 
     Ok(())

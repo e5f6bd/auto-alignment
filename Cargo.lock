@@ -3085,6 +3085,7 @@ dependencies = [
  "clap",
  "env_logger",
  "log",
+ "num_enum",
  "spcm-sys",
  "thiserror",
 ]
