@@ -1,12 +1,13 @@
 use std::{
     ffi::{c_ulong, c_void, CString, NulError},
     fmt::{Debug, Display},
+    num::TryFromIntError,
     ptr::null_mut,
     string::FromUtf8Error,
 };
 
 use bstr::BString;
-use num_enum::TryFromPrimitiveError;
+use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use spcm_sys::*;
 use thiserror::Error;
 
@@ -161,7 +162,6 @@ impl Debug for ErrorCode {
         Ok(())
     }
 }
-
 impl Device {
     fn check(&self, api_error_code: c_ulong) -> Result<(), Error> {
         let mut error_buffer = vec![0; ERRORTEXTLEN as usize];
@@ -192,7 +192,6 @@ pub enum DeviceCardTypeStrError {
     #[error("Card type cannot be converted to a UTF-8 string: {0:?}")]
     InvalidString(#[from] FromUtf8Error),
 }
-
 impl Device {
     pub fn card_type_str(&self) -> Result<String, DeviceCardTypeStrError> {
         // We assume that 1024 bytes is sufficiently long for card type.
@@ -220,7 +219,7 @@ pub enum DeviceCardTypeError {
     #[error("API returned an error: {0:?}")]
     ApiError(#[from] Error),
     #[error("Unknown card type: {0:?}")]
-    UnknownCardTypeError(#[from] TryFromPrimitiveError<card_type::CardType>),
+    UnknownType(#[from] TryFromPrimitiveError<card_type::CardType>),
 }
 impl Device {
     pub fn card_type(&self) -> Result<card_type::CardType, DeviceCardTypeError> {
@@ -231,5 +230,43 @@ impl Device {
             ret
         };
         Ok(ret.try_into()?)
+    }
+}
+
+#[derive(Debug)]
+pub struct SerialNumber(pub i32);
+impl Device {
+    pub fn serial_no(&self) -> Result<SerialNumber, Error> {
+        let mut ret = 0;
+        let ret_ptr = (&mut ret) as _;
+        self.check(unsafe { spcm_dwGetParam_i32(self.0, SPC_PCISERIALNO as _, ret_ptr) })?;
+        Ok(SerialNumber(ret))
+    }
+}
+
+#[derive(Debug, TryFromPrimitive)]
+#[repr(u32)]
+pub enum CardFunctionType {
+    AnalogInput = SPCM_TYPE_AI,
+    AnalogOutput = SPCM_TYPE_AO,
+    DigitalInput = SPCM_TYPE_DI,
+    DigitalOutput = SPCM_TYPE_DO,
+    DigitalInputOutput = SPCM_TYPE_DIO,
+}
+#[derive(Debug, Error)]
+pub enum CardFunctionTypeError {
+    #[error("API returned an error: {0:?}")]
+    ApiError(#[from] Error),
+    #[error("Unknown card type: {0:?}")]
+    OutOfRange(#[from] TryFromIntError),
+    #[error("Unknown card type: {0:?}")]
+    UnknownCardType(#[from] TryFromPrimitiveError<CardFunctionType>),
+}
+impl Device {
+    pub fn function_type(&self) -> Result<CardFunctionType, CardFunctionTypeError> {
+        let mut ret = 0;
+        let ret_ptr = (&mut ret) as _;
+        self.check(unsafe { spcm_dwGetParam_i32(self.0, SPC_FNCTYPE as _, ret_ptr) })?;
+        Ok(u32::try_from(ret)?.try_into()?)
     }
 }

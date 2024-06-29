@@ -644,4 +644,3 @@ pub enum CardType {
     M4X7735X4 = 554805,
     Mx9010 = 167952,
 }
-

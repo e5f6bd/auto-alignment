@@ -1,5 +1,6 @@
 use std::{thread::sleep, time::Duration};
 
+use anyhow::bail;
 use clap::Parser;
 use spcm::Device;
 
@@ -15,7 +16,16 @@ fn main() -> anyhow::Result<()> {
     println!("Hello!");
 
     let device = Device::open(&opts.address)?;
-    println!("{:?} ({:?})", device.card_type()?, device.card_type_str()?);
+    println!(
+        "Card Type: {:?} ({:?})",
+        device.card_type()?,
+        device.card_type_str()?
+    );
+    let function = device.function_type()?;
+    println!("Card Function Type: {function:?}");
+    if !matches!(function, spcm::CardFunctionType::AnalogOutput) {
+        bail!("The card does not support analog output");
+    }
     sleep(Duration::from_secs(1));
 
     Ok(())
