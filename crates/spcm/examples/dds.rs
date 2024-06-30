@@ -76,7 +76,8 @@ fn main() -> anyhow::Result<()> {
         let mut core = device.dds_core_mut(index);
         core.set_amplitude(1.0)?;
         core.set_frequency(
-            (if i < 2 { 80. } else { 0. } + if i % 2 == 0 { 1. } else { 0. }) * 1e6,
+            // (if i < 2 { 80. } else { 0. } + if i % 2 == 0 { 1. } else { 0. }) * 1e6,
+            10. * 1e6,
         )?;
 
         println!(
@@ -90,6 +91,7 @@ fn main() -> anyhow::Result<()> {
 
     device.execute_commands([M2Command::CardStart, M2Command::CardEnableTrigger])?;
 
+    device.execute_command(M2Command::CardForceTrigger)?;
     println!("Press Enter to Exit");
     stdin().read_line(&mut String::new())?;
 

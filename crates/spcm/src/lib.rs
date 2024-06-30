@@ -13,6 +13,61 @@ use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use spcm_sys::*;
 use thiserror::Error;
 
+// #[allow(non_snake_case)]
+// mod wrp {
+//     pub unsafe fn spcm_dwSetParam_i32(
+//         hDevice: *mut ::std::os::raw::c_void,
+//         lRegister: ::std::os::raw::c_long,
+//         lValue: ::std::os::raw::c_long,
+//     ) -> ::std::os::raw::c_ulong {
+//         println!("set_i32({lRegister}, {lValue})");
+//         spcm_sys::spcm_dwSetParam_i32(hDevice, lRegister, lValue)
+//     }
+//     pub unsafe fn spcm_dwSetParam_i64(
+//         hDevice: *mut ::std::os::raw::c_void,
+//         lRegister: ::std::os::raw::c_long,
+//         llValue: ::std::os::raw::c_longlong,
+//     ) -> ::std::os::raw::c_ulong {
+//         println!("set_i64({lRegister}, {llValue})");
+//         spcm_sys::spcm_dwSetParam_i64(hDevice, lRegister, llValue)
+//     }
+//     pub unsafe fn spcm_dwSetParam_d64(
+//         hDevice: *mut ::std::os::raw::c_void,
+//         lRegister: ::std::os::raw::c_long,
+//         dValue: f64,
+//     ) -> ::std::os::raw::c_ulong {
+//         println!("set_d64({lRegister}, {dValue})");
+//         spcm_sys::spcm_dwSetParam_d64(hDevice, lRegister, dValue)
+//     }
+//     pub unsafe fn spcm_dwGetParam_i32(
+//         hDevice: *mut ::std::os::raw::c_void,
+//         lRegister: ::std::os::raw::c_long,
+//         plValue: *mut ::std::os::raw::c_long,
+//     ) -> ::std::os::raw::c_ulong {
+//         let ret = spcm_sys::spcm_dwGetParam_i32(hDevice, lRegister, plValue);
+//         println!("get_i32({lRegister}) = {}", *plValue);
+//         ret
+//     }
+//     pub unsafe fn spcm_dwGetParam_i64(
+//         hDevice: *mut ::std::os::raw::c_void,
+//         lRegister: ::std::os::raw::c_long,
+//         pllValue: *mut ::std::os::raw::c_longlong,
+//     ) -> ::std::os::raw::c_ulong {
+//         let ret = spcm_sys::spcm_dwGetParam_i64(hDevice, lRegister, pllValue);
+//         println!("get_i64({lRegister}) = {}", *pllValue);
+//         ret
+//     }
+//     pub unsafe fn spcm_dwGetParam_d64(
+//         hDevice: *mut ::std::os::raw::c_void,
+//         lRegister: ::std::os::raw::c_long,
+//         pdValue: *mut f64,
+//     ) -> ::std::os::raw::c_ulong {
+//         let ret = spcm_sys::spcm_dwGetParam_d64(hDevice, lRegister, pdValue);
+//         println!("get_d64({lRegister}) = {}", *pdValue);
+//         ret
+//     }
+// }
+
 pub struct Device(*mut c_void);
 
 #[derive(Debug, Error)]
