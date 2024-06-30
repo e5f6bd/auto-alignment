@@ -7,6 +7,7 @@ use std::{
 };
 
 use bstr::BString;
+use enumset::{EnumSet, EnumSetType};
 use num_enum::{TryFromPrimitive, TryFromPrimitiveError};
 use spcm_sys::*;
 use thiserror::Error;
@@ -268,5 +269,46 @@ impl Device {
         let ret_ptr = (&mut ret) as _;
         self.check(unsafe { spcm_dwGetParam_i32(self.0, SPC_FNCTYPE as _, ret_ptr) })?;
         Ok(u32::try_from(ret)?.try_into()?)
+    }
+}
+
+#[derive(Debug, TryFromPrimitive, EnumSetType)]
+#[repr(u32)]
+pub enum ExtendedFeature {
+    BlockStatistics,
+    BlockAverage,
+    BoxcarAverage,
+    PulseGenerator,
+    DDS,
+    Evaluation,
+}
+#[derive(Debug, Error)]
+pub enum CardExtendeedFeatureError {
+    #[error("API returned an error: {0:?}")]
+    ApiError(#[from] Error),
+    #[error("Unknown bit found: {0} ({0:032b})")]
+    UnknownBitFound(u32),
+}
+impl Device {
+    pub fn extended_features(&self) -> Result<EnumSet<ExtendedFeature>, CardExtendeedFeatureError> {
+        let mut ret = 0i32;
+        let ret_ptr = (&mut ret) as _;
+        self.check(unsafe { spcm_dwGetParam_i32(self.0, SPC_PCIEXTFEATURES as _, ret_ptr) })?;
+        let ret = ret as u32;
+        (0..32)
+            .map(|i| 1 << i)
+            .filter(|x| x & ret > 0)
+            .map(|x| {
+                Ok(match x {
+                    SPCM_FEAT_EXTFW_SEGSTAT => ExtendedFeature::BlockStatistics,
+                    SPCM_FEAT_EXTFW_SEGAVERAGE => ExtendedFeature::BlockAverage,
+                    SPCM_FEAT_EXTFW_BOXCAR => ExtendedFeature::BoxcarAverage,
+                    SPCM_FEAT_EXTFW_PULSEGEN => ExtendedFeature::PulseGenerator,
+                    SPCM_FEAT_EXTFW_DDS => ExtendedFeature::DDS,
+                    SPCM_FEAT_EXTFW_EVALUATION => ExtendedFeature::Evaluation,
+                    _ => return Err(CardExtendeedFeatureError::UnknownBitFound(ret)),
+                })
+            })
+            .try_fold(EnumSet::new(), |x, y| Ok(x | y?))
     }
 }

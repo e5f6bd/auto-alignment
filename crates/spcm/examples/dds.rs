@@ -1,8 +1,6 @@
-use std::{thread::sleep, time::Duration};
-
 use anyhow::bail;
 use clap::Parser;
-use spcm::Device;
+use spcm::{Device, ExtendedFeature};
 
 #[derive(Parser)]
 struct Opts {
@@ -16,17 +14,25 @@ fn main() -> anyhow::Result<()> {
     println!("Hello!");
 
     let device = Device::open(&opts.address)?;
+
+    // card type
     println!(
         "Card Type: {:?} ({:?})",
         device.card_type()?,
         device.card_type_str()?
     );
+
     let function = device.function_type()?;
     println!("Card Function Type: {function:?}");
     if !matches!(function, spcm::CardFunctionType::AnalogOutput) {
         bail!("The card does not support analog output");
     }
-    sleep(Duration::from_secs(1));
+
+    let extensions = device.extended_features()?;
+    println!("Installed extended Options and Feautres: {extensions:?}");
+    if !extensions.contains(ExtendedFeature::Dds) {
+        bail!("The card does not support DDS");
+    }
 
     Ok(())
 }

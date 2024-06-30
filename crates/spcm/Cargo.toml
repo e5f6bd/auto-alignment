@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 bstr = "1.9.1"
+enumset = "1.1.3"
 num_enum = "0.7.2"
 spcm-sys = { version = "0.1.0", path = "../spcm-sys" }
 thiserror = "1.0.61"
