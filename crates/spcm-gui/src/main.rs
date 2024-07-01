@@ -14,7 +14,9 @@ use iced::{
 };
 use log::error;
 use regex::Regex;
-use spcm::{FREQUENCY_STEP, PHASE_STEP};
+use spcm::{
+    CardMode, ClockMode, DdsCommand, Device, M2Command, TriggerMask, FREQUENCY_STEP, PHASE_STEP,
+};
 use text_input_theme::CustomBackgroundTextInput;
 
 fn main() -> anyhow::Result<()> {
@@ -53,23 +55,25 @@ impl Application for App {
     type Flags = ();
 
     fn new((): ()) -> (Self, Command<Message>) {
-        (
-            App {
-                // dds_connector: None,
-                address: "/dev/spcm0".to_owned(),
-                // connected: false,
-                connection_status: ConnectionStatus::Disconnected,
-                channel_states: array::from_fn(|_| ChannelState {
-                    amplitude: "100".into(),
-                    frequency_text: "1 000 000.0".into(),
-                    frequency_editing: false,
-                    frequency: 3435974,
-                    phase: 0,
-                }),
-                status_message: "".to_owned(),
-            },
-            Command::none(),
-        )
+        let mut app = App {
+            // dds_connector: None,
+            address: "/dev/spcm0".to_owned(),
+            // connected: false,
+            connection_status: ConnectionStatus::Disconnected,
+            channel_states: array::from_fn(|_| ChannelState {
+                amplitude: "100".into(),
+                frequency_text: "1 000 000.0".into(),
+                frequency_editing: false,
+                frequency: 0, // Will be updated by "submit_frequency"
+                phase: 0,
+            }),
+            status_message: "".to_owned(),
+        };
+        for i in 0..4 {
+            app.update_frequency_text(i)
+                .expect("The frequency text written above must be valid.");
+        }
+        (app, Command::none())
     }
 
     fn title(&self) -> String {
@@ -95,6 +99,18 @@ impl Application for App {
             Message::ConnectionEstablished(tx) => {
                 self.connection_status = ConnectionStatus::Connected(tx);
                 self.status_message = "Connected.".to_owned();
+                let ConnectionStatus::Connected(tx) = &self.connection_status else {
+                    unreachable!();
+                };
+                if let Err(e) = (|| {
+                    for (i, channel) in self.channel_states.iter().enumerate() {
+                        tx.send(DdsWorkerMessage::SetFrequency(i, channel.frequency))?;
+                        tx.send(DdsWorkerMessage::SetPhase(i, channel.phase))?;
+                    }
+                    anyhow::Ok(())
+                })() {
+                    self.report_error(format!("{e:#}"))
+                }
             }
             Message::ConnectionLost(error) => {
                 self.connection_status = ConnectionStatus::Disconnected;
@@ -247,7 +263,7 @@ impl App {
     }
 
     #[allow(clippy::inconsistent_digit_grouping)]
-    fn submit_frequency(&mut self, index: usize) -> anyhow::Result<()> {
+    fn update_frequency_text(&mut self, index: usize) -> anyhow::Result<u32> {
         let c = &mut self.channel_states[index];
         let frequency = c.parse_frequency()?;
         c.frequency = frequency;
@@ -269,6 +285,11 @@ impl App {
             }
         };
         c.frequency_editing = false;
+        Ok(frequency)
+    }
+
+    fn submit_frequency(&mut self, index: usize) -> anyhow::Result<()> {
+        let frequency = self.update_frequency_text(index)?;
         // Send changes to DDS
         let ConnectionStatus::Connected(tx) = &self.connection_status else {
             bail!("Unreachable: connection status is not `Connected`!")
@@ -278,11 +299,11 @@ impl App {
     }
 
     fn submit_phase(&mut self, index: usize, phase: u16) -> anyhow::Result<()> {
-        self.channel_states[index].phase = phase;
-        let ConnectionStatus::Connected(tx) = &self.connection_status else {
-            bail!("Unreachable: connection status is not `Connected`!")
+        // TODO: phase slider should be "disabled"
+        if let ConnectionStatus::Connected(tx) = &self.connection_status {
+            self.channel_states[index].phase = phase;
+            tx.send(DdsWorkerMessage::SetPhase(index, phase))?;
         };
-        tx.send(DdsWorkerMessage::SetPhase(index, phase))?;
         Ok(())
     }
 
@@ -297,20 +318,68 @@ enum DdsWorkerMessage {
     SetPhase(usize, u16),
 }
 
-async fn dds_worker(mut tx: mpsc_f::Sender<Message>, _address: String) -> anyhow::Result<()> {
+async fn dds_worker(mut tx: mpsc_f::Sender<Message>, address: String) -> anyhow::Result<()> {
+    let mut device = open_and_start_dds(&address)?;
+
     let (main_tx, rx) = mpsc::channel();
     tx.send(Message::ConnectionEstablished(main_tx)).await?;
+
     for message in rx.iter() {
         match message {
             DdsWorkerMessage::SetFrequency(index, frequency) => {
+                let index = core_index(index);
                 log::info!("Set frequency: {index} {frequency:08x};");
+                device.dds_core_mut(index).set_frequency_exact(frequency)?;
             }
             DdsWorkerMessage::SetPhase(index, phase) => {
+                let index = core_index(index);
                 log::info!("Set phase: {index} {phase:04x};");
+                device.dds_core_mut(index).set_phase_exact(phase)?;
             }
         }
+        device.execute_dds_command(DdsCommand::ExecuteAtTrigger)?;
+        device.execute_dds_command(DdsCommand::WriteToCard)?;
+        device.execute_command(M2Command::CardForceTrigger)?;
     }
+
+    device.execute_command(M2Command::CardStop)?;
     Ok(())
+}
+
+fn open_and_start_dds(address: &str) -> anyhow::Result<Device> {
+    let mut device = Device::open(address)?;
+    device.enable_channels(0b1111)?;
+    device.set_card_mode(CardMode::StdDds)?;
+    device.set_trigger_or_mask(TriggerMask::empty())?;
+    device.set_clock_mode(ClockMode::InternalPll)?;
+    device.enable_clock_out(true)?;
+    for i in 0..4 {
+        // TODO respect amplitude
+        device.set_channel_amplitude(i, 500)?;
+        device.enable_channel_out(i, true)?;
+    }
+    device.execute_command(M2Command::CardWriteSetup)?;
+    device.execute_dds_command(DdsCommand::Reset)?;
+    device.execute_command(M2Command::CardStart)?;
+    for i in 0..4 {
+        let mut core = device.dds_core_mut(core_index(i));
+        core.set_amplitude(1.)?;
+        core.set_phase(0.)?;
+        core.set_frequency(1e6)?;
+    }
+    device.execute_dds_command(DdsCommand::ExecuteAtTrigger)?;
+    device.execute_dds_command(DdsCommand::WriteToCard)?;
+    device.execute_command(M2Command::CardForceTrigger)?;
+    Ok(device)
+}
+
+fn core_index(index: usize) -> usize {
+    assert!(index < 4);
+    if index == 0 {
+        0
+    } else {
+        19 + index
+    }
 }
 
 impl ChannelState {
