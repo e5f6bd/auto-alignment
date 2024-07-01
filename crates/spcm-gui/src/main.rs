@@ -1,11 +1,13 @@
-use std::array;
+use std::{array, future::pending, sync::mpsc, thread::spawn};
 
 use anyhow::Context;
 use iced::{
+    futures::{channel::mpsc as mpsc_f, SinkExt, StreamExt},
     theme,
     widget::{button, column, horizontal_space, row, slider, text, text_input},
     Alignment, Application, Color, Command, Renderer, Settings, Theme,
 };
+use log::error;
 use regex::Regex;
 use spcm::{FREQUENCY_STEP, PHASE_STEP};
 use text_input_theme::CustomBackgroundTextInput;
@@ -19,6 +21,7 @@ fn main() -> anyhow::Result<()> {
 }
 
 struct App {
+    dds_connector: Option<mpsc_f::Sender<String>>,
     address: String,
     connected: bool,
     channel_states: [ChannelState; 4],
@@ -40,6 +43,7 @@ impl Application for App {
     fn new((): ()) -> (Self, Command<Message>) {
         (
             App {
+                dds_connector: None,
                 address: "/dev/spcm0".to_owned(),
                 connected: false,
                 channel_states: array::from_fn(|_| ChannelState {
@@ -61,10 +65,17 @@ impl Application for App {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
+            Message::Nop => {}
+            Message::EstablishSubscriptionConnection(sender) => self.dds_connector = Some(sender),
             Message::AddressChanged(x) => self.address = x,
             Message::Connect => {
-                // TODO: connect
-                self.connected = true;
+                let Some(dds_connector) = &mut self.dds_connector else {
+                    self.report_error("Waiting for the DDS worker to start...".to_owned());
+                    return Command::none();
+                };
+                return Command::perform(dds_connector.send(self.address.clone()), |_| {
+                    Message::Nop
+                });
             }
             Message::AmplitudeChanged(i, x) => self.channel_states[i].amplitude = x,
             Message::FrequencyTextChanged(i, x) => {
@@ -116,7 +127,9 @@ impl Application for App {
             let address_input = {
                 let mut t = text_input("", &self.address);
                 if !self.connected {
-                    t = t.on_input(Message::AddressChanged);
+                    t = t
+                        .on_input(Message::AddressChanged)
+                        .on_submit(Message::Connect);
                 }
                 t
             };
@@ -185,7 +198,32 @@ impl Application for App {
         }
         column.into()
     }
+
+    fn subscription(&self) -> iced::Subscription<Self::Message> {
+        iced::subscription::channel((), 100, |mut tx| async move {
+            let (tx_app, mut rx) = mpsc_f::channel(100);
+            if let Err(e) = tx
+                .send(Message::EstablishSubscriptionConnection(tx_app))
+                .await
+            {
+                error!("Failed to establish subscription connection");
+                pending().await
+            }
+            while let Some(address) = rx.next().await {
+                let tx = tx.clone();
+                spawn(move || pollster::block_on(dds_worker(tx, address)));
+            }
+            error!("End of stream");
+            pending().await
+        })
+    }
 }
+
+enum DdsWorkerMessage {
+    // Connect(String),
+}
+
+async fn dds_worker(mut tx: mpsc_f::Sender<Message>, address: String) {}
 
 impl App {
     fn report_error(&mut self, message: String) {
@@ -231,6 +269,8 @@ impl ChannelState {
 
 #[derive(Clone, Debug)]
 enum Message {
+    Nop,
+    EstablishSubscriptionConnection(mpsc_f::Sender<String>),
     AddressChanged(String),
     Connect,
     AmplitudeChanged(usize, String),
