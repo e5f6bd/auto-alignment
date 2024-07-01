@@ -80,7 +80,7 @@ fn main() -> anyhow::Result<()> {
     device.execute_command(M2Command::CardStart)?;
 
     // Command sequence
-    for step in 0..10 {
+    for step in 0..18 {
         // Press enter to reflect changes
         println!("Press Enter to send trigger ({step}/15)");
         stdin().read_line(&mut String::new())?;
@@ -88,7 +88,8 @@ fn main() -> anyhow::Result<()> {
             let index = if i == 0 { 0 } else { 19 + i };
             let mut core = device.dds_core_mut(index);
             core.set_amplitude(1.0)?;
-            core.set_frequency((step + 1) as f64 * 1e6)?;
+            core.set_frequency(1. * 1e6)?;
+            core.set_phase(if i == 0 { 20. * step as f64 } else { 0. })?;
 
             println!(
                 "Generated signal at core {index:2}: frequency = {:10.30} Hz, phase = {} degree, and amplitude = {}", 
