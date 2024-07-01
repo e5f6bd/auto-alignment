@@ -96,6 +96,12 @@ impl Application for App {
                 self.connection_status = ConnectionStatus::Connected(tx);
                 self.status_message = "Connected.".to_owned();
             }
+            Message::ConnectionLost(error) => {
+                self.connection_status = ConnectionStatus::Disconnected;
+                if let Some(error) = error {
+                    self.status_message = error;
+                }
+            }
             Message::AmplitudeChanged(i, x) => self.channel_states[i].amplitude = x,
             Message::FrequencyTextChanged(i, x) => {
                 let c = &mut self.channel_states[i];
@@ -199,10 +205,17 @@ impl Application for App {
         let connection = connecting.then(|| {
             struct Connection;
             let address = self.address.clone();
-            subscription::channel(TypeId::of::<Connection>(), 100, |tx| async move {
+            subscription::channel(TypeId::of::<Connection>(), 100, |mut tx| async move {
                 spawn(move || {
-                    if let Err(e) = pollster::block_on(dds_worker(tx, address)) {
-                        error!("Error occurred on DDS worker: {e:#}");
+                    let res = pollster::block_on(dds_worker(tx.clone(), address));
+                    let error = res
+                        .err()
+                        .map(|e| format!("{:#}", e.context("Error occurred on DDS worker")));
+                    if let Some(e) = &error {
+                        error!("{e}");
+                    }
+                    if let Err(e) = pollster::block_on(tx.send(Message::ConnectionLost(error))) {
+                        error!("Failed to send connection lost notification: {e:#}");
                     }
                 });
                 pending().await
@@ -256,7 +269,7 @@ impl App {
             }
         };
         c.frequency_editing = false;
-        // Send change to DDS
+        // Send changes to DDS
         let ConnectionStatus::Connected(tx) = &self.connection_status else {
             bail!("Unreachable: connection status is not `Connected`!")
         };
@@ -285,9 +298,6 @@ enum DdsWorkerMessage {
 }
 
 async fn dds_worker(mut tx: mpsc_f::Sender<Message>, _address: String) -> anyhow::Result<()> {
-    // let (main_tx, mut rx) = unbounded();
-    // tx.send(Message::ConnectionEstablished(main_tx)).await?;
-    // while let Some(message) = rx.next().await {
     let (main_tx, rx) = mpsc::channel();
     tx.send(Message::ConnectionEstablished(main_tx)).await?;
     for message in rx.iter() {
@@ -347,7 +357,7 @@ enum Message {
     Connect,
     // ConnectionEstablished(UnboundedSender<DdsWorkerMessage>),
     ConnectionEstablished(mpsc::Sender<DdsWorkerMessage>),
-    // ConnectionLost(Option<String>),
+    ConnectionLost(Option<String>),
     AmplitudeChanged(usize, String),
     FrequencyTextChanged(usize, String),
     SubmitFrequency(usize),
