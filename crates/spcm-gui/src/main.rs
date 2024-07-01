@@ -1,11 +1,16 @@
-use std::{array, future::pending, sync::mpsc, thread::spawn};
+#![allow(clippy::assigning_clones)]
 
-use anyhow::Context;
+use std::{any::TypeId, array, future::pending, sync::mpsc, thread::spawn};
+
+use anyhow::{bail, Context};
 use iced::{
-    futures::{channel::mpsc as mpsc_f, SinkExt, StreamExt},
-    theme,
+    futures::{
+        channel::mpsc::{self as mpsc_f},
+        SinkExt,
+    },
+    subscription, theme,
     widget::{button, column, horizontal_space, row, slider, text, text_input},
-    Alignment, Application, Color, Command, Renderer, Settings, Theme,
+    Alignment, Application, Color, Command, Renderer, Settings, Subscription, Theme,
 };
 use log::error;
 use regex::Regex;
@@ -21,11 +26,18 @@ fn main() -> anyhow::Result<()> {
 }
 
 struct App {
-    dds_connector: Option<mpsc_f::Sender<String>>,
+    // dds_connector: Option<mpsc::Sender<String>>,
     address: String,
-    connected: bool,
+    connection_status: ConnectionStatus,
+    // connected: bool,
     channel_states: [ChannelState; 4],
-    error_message: String,
+    status_message: String,
+}
+enum ConnectionStatus {
+    Disconnected,
+    Connecting,
+    // Connected(UnboundedSender<DdsWorkerMessage>),
+    Connected(mpsc::Sender<DdsWorkerMessage>),
 }
 struct ChannelState {
     amplitude: String,
@@ -43,9 +55,10 @@ impl Application for App {
     fn new((): ()) -> (Self, Command<Message>) {
         (
             App {
-                dds_connector: None,
+                // dds_connector: None,
                 address: "/dev/spcm0".to_owned(),
-                connected: false,
+                // connected: false,
+                connection_status: ConnectionStatus::Disconnected,
                 channel_states: array::from_fn(|_| ChannelState {
                     amplitude: "100".into(),
                     frequency_text: "1 000 000.0".into(),
@@ -53,7 +66,7 @@ impl Application for App {
                     frequency: 3435974,
                     phase: 0,
                 }),
-                error_message: "".to_owned(),
+                status_message: "".to_owned(),
             },
             Command::none(),
         )
@@ -65,17 +78,23 @@ impl Application for App {
 
     fn update(&mut self, message: Message) -> Command<Message> {
         match message {
-            Message::Nop => {}
-            Message::EstablishSubscriptionConnection(sender) => self.dds_connector = Some(sender),
+            // Message::Nop => {}
+            // Message::EstablishSubscriptionConnection(sender) => self.dds_connector = Some(sender),
             Message::AddressChanged(x) => self.address = x,
             Message::Connect => {
-                let Some(dds_connector) = &mut self.dds_connector else {
-                    self.report_error("Waiting for the DDS worker to start...".to_owned());
-                    return Command::none();
-                };
-                return Command::perform(dds_connector.send(self.address.clone()), |_| {
-                    Message::Nop
-                });
+                self.connection_status = ConnectionStatus::Connecting;
+                self.status_message = "Connecting...".to_owned();
+                // let Some(dds_connector) = &mut self.dds_connector else {
+                //     self.report_error("Waiting for the DDS worker to start...".to_owned());
+                //     return Command::none();
+                // };
+                // return Command::perform(dds_connector.send(self.address.clone()), |_| {
+                //     Message::Nop
+                // });
+            }
+            Message::ConnectionEstablished(tx) => {
+                self.connection_status = ConnectionStatus::Connected(tx);
+                self.status_message = "Connected.".to_owned();
             }
             Message::AmplitudeChanged(i, x) => self.channel_states[i].amplitude = x,
             Message::FrequencyTextChanged(i, x) => {
@@ -83,40 +102,16 @@ impl Application for App {
                 c.frequency_text = x;
                 c.frequency_editing = true;
             }
-            #[allow(clippy::inconsistent_digit_grouping)]
             Message::SubmitFrequency(i) => {
-                let c = &mut self.channel_states[i];
-                match c.parse_frequency() {
-                    Ok(frequency) => {
-                        c.frequency = frequency;
-                        c.frequency_text = {
-                            let val = (frequency as f64 * FREQUENCY_STEP * 10.).round() as u64;
-                            dbg!(val);
-                            let g = val / 1_000_000_000_0 % 1000;
-                            let m = val / 1_000_000_0 % 1000;
-                            let k = val / 1_000_0 % 1000;
-                            let o = val / 10 % 1000;
-                            let f = val % 10;
-                            dbg!(g, m, k, o, f);
-                            if g > 0 {
-                                format!("{g} {m:03} {k:03} {o:03}.{f:01}")
-                            } else if m > 0 {
-                                format!("{m} {k:03} {o:03}.{f:01}")
-                            } else if k > 0 {
-                                format!("{k} {o:03}.{f:01}")
-                            } else {
-                                format!("{o}.{f:01}")
-                            }
-                        };
-                        c.frequency_editing = false;
-                        // Send change to DDS
-                    }
-                    Err(e) => {
-                        self.report_error(format!("{e:#}"));
-                    }
+                if let Err(e) = self.submit_frequency(i) {
+                    self.report_error(format!("{e:#}"))
                 }
             }
-            Message::PhaseChanged(i, x) => self.channel_states[i].phase = x,
+            Message::PhaseChanged(i, x) => {
+                if let Err(e) = self.submit_phase(i, x) {
+                    self.report_error(format!("{e:#}"))
+                }
+            }
         }
         Command::none()
     }
@@ -126,7 +121,7 @@ impl Application for App {
         let address_row = {
             let address_input = {
                 let mut t = text_input("", &self.address);
-                if !self.connected {
+                if !self.connected() {
                     t = t
                         .on_input(Message::AddressChanged)
                         .on_submit(Message::Connect);
@@ -134,7 +129,7 @@ impl Application for App {
                 t
             };
             let connect_button =
-                button("Connect").on_press_maybe((!self.connected).then_some(Message::Connect));
+                button("Connect").on_press_maybe((!self.connected()).then_some(Message::Connect));
             row![address_input, connect_button]
         };
         let mut column = column![address_row];
@@ -143,7 +138,7 @@ impl Application for App {
             let amplitude_label = text("Amplitude:");
             let amplitude_input = {
                 let mut t = text_input("80-2500", &channel.amplitude);
-                if !self.connected {
+                if !self.connected() {
                     t = t.on_input(move |x| Message::AmplitudeChanged(i, x));
                 }
                 t
@@ -152,7 +147,7 @@ impl Application for App {
             let frequency_input = {
                 let mut t =
                     text_input("", &channel.frequency_text).on_submit(Message::SubmitFrequency(i));
-                if self.connected {
+                if self.connected() {
                     t = t.on_input(move |x| Message::FrequencyTextChanged(i, x));
                 }
                 {
@@ -193,42 +188,119 @@ impl Application for App {
             column = column.push(row);
         }
         {
-            let error = text(&self.error_message);
+            let error = text(&self.status_message);
             column = column.push(error);
         }
         column.into()
     }
 
     fn subscription(&self) -> iced::Subscription<Self::Message> {
-        iced::subscription::channel((), 100, |mut tx| async move {
-            let (tx_app, mut rx) = mpsc_f::channel(100);
-            if let Err(e) = tx
-                .send(Message::EstablishSubscriptionConnection(tx_app))
-                .await
-            {
-                error!("Failed to establish subscription connection");
+        let connecting = !matches!(self.connection_status, ConnectionStatus::Disconnected);
+        let connection = connecting.then(|| {
+            struct Connection;
+            let address = self.address.clone();
+            subscription::channel(TypeId::of::<Connection>(), 100, |tx| async move {
+                spawn(move || {
+                    if let Err(e) = pollster::block_on(dds_worker(tx, address)) {
+                        error!("Error occurred on DDS worker: {e:#}");
+                    }
+                });
                 pending().await
-            }
-            while let Some(address) = rx.next().await {
-                let tx = tx.clone();
-                spawn(move || pollster::block_on(dds_worker(tx, address)));
-            }
-            error!("End of stream");
-            pending().await
-        })
+            })
+        });
+        Subscription::batch(connection)
+        // iced::subscription::channel((), 100, |mut tx| async move {
+        //     let (tx_app, mut rx) = mpsc::channel(100);
+        //     if let Err(e) = tx
+        //         .send(Message::EstablishSubscriptionConnection(tx_app))
+        //         .await
+        //     {
+        //         error!("Failed to establish subscription connection");
+        //         pending().await
+        //     }
+        //     while let Some(address) = rx.next().await {
+        //         let tx = tx.clone();
+        //         spawn(move || pollster::block_on(dds_worker(tx, address)));
+        //     }
+        //     error!("End of stream");
+        //     pending().await
+        // })
     }
 }
-
-enum DdsWorkerMessage {
-    // Connect(String),
-}
-
-async fn dds_worker(mut tx: mpsc_f::Sender<Message>, address: String) {}
 
 impl App {
     fn report_error(&mut self, message: String) {
-        self.error_message = message
+        self.status_message = message
     }
+
+    #[allow(clippy::inconsistent_digit_grouping)]
+    fn submit_frequency(&mut self, index: usize) -> anyhow::Result<()> {
+        let c = &mut self.channel_states[index];
+        let frequency = c.parse_frequency()?;
+        c.frequency = frequency;
+        c.frequency_text = {
+            let val = (frequency as f64 * FREQUENCY_STEP * 10.).round() as u64;
+            let g = val / 1_000_000_000_0 % 1000;
+            let m = val / 1_000_000_0 % 1000;
+            let k = val / 1_000_0 % 1000;
+            let o = val / 10 % 1000;
+            let f = val % 10;
+            if g > 0 {
+                format!("{g} {m:03} {k:03} {o:03}.{f:01}")
+            } else if m > 0 {
+                format!("{m} {k:03} {o:03}.{f:01}")
+            } else if k > 0 {
+                format!("{k} {o:03}.{f:01}")
+            } else {
+                format!("{o}.{f:01}")
+            }
+        };
+        c.frequency_editing = false;
+        // Send change to DDS
+        let ConnectionStatus::Connected(tx) = &self.connection_status else {
+            bail!("Unreachable: connection status is not `Connected`!")
+        };
+        tx.send(DdsWorkerMessage::SetFrequency(index, frequency))?;
+        Ok(())
+    }
+
+    fn submit_phase(&mut self, index: usize, phase: u16) -> anyhow::Result<()> {
+        self.channel_states[index].phase = phase;
+        let ConnectionStatus::Connected(tx) = &self.connection_status else {
+            bail!("Unreachable: connection status is not `Connected`!")
+        };
+        tx.send(DdsWorkerMessage::SetPhase(index, phase))?;
+        Ok(())
+    }
+
+    fn connected(&self) -> bool {
+        matches!(self.connection_status, ConnectionStatus::Connected(_))
+    }
+}
+
+#[derive(Debug)]
+enum DdsWorkerMessage {
+    SetFrequency(usize, u32),
+    SetPhase(usize, u16),
+}
+
+async fn dds_worker(mut tx: mpsc_f::Sender<Message>, _address: String) -> anyhow::Result<()> {
+    // let (main_tx, mut rx) = unbounded();
+    // tx.send(Message::ConnectionEstablished(main_tx)).await?;
+    // while let Some(message) = rx.next().await {
+    let (main_tx, rx) = mpsc::channel();
+    tx.send(Message::ConnectionEstablished(main_tx)).await?;
+    for message in rx.iter() {
+        match message {
+            DdsWorkerMessage::SetFrequency(index, frequency) => {
+                log::info!("Set frequency: {index} {frequency:08x};");
+            }
+            DdsWorkerMessage::SetPhase(index, phase) => {
+                log::info!("Set phase: {index} {phase:04x};");
+            }
+        }
+    }
+    Ok(())
 }
 
 impl ChannelState {
@@ -244,7 +316,7 @@ impl ChannelState {
             .unwrap()
             .captures(&self.frequency_text)
             .context("Invalid frequency syntax")?;
-            let f: f64 = dbg!(&captures)
+            let f: f64 = captures
                 .name("num")
                 .unwrap()
                 .as_str()
@@ -258,10 +330,9 @@ impl ChannelState {
             };
             f * suffix
         };
-        dbg!(value);
         // u32 range \subset i64 range.
         // First convert to i64, then to u32, to check out-of-range
-        (dbg!(value / FREQUENCY_STEP).round() as i64)
+        ((value / FREQUENCY_STEP).round() as i64)
             .try_into()
             .context("Value out of range")
     }
@@ -269,10 +340,14 @@ impl ChannelState {
 
 #[derive(Clone, Debug)]
 enum Message {
-    Nop,
-    EstablishSubscriptionConnection(mpsc_f::Sender<String>),
+    // Nop,
+    // EstablishSubscriptionConnection(mpsc::Sender<String>),
     AddressChanged(String),
+
     Connect,
+    // ConnectionEstablished(UnboundedSender<DdsWorkerMessage>),
+    ConnectionEstablished(mpsc::Sender<DdsWorkerMessage>),
+    // ConnectionLost(Option<String>),
     AmplitudeChanged(usize, String),
     FrequencyTextChanged(usize, String),
     SubmitFrequency(usize),
