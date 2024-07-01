@@ -67,10 +67,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     serde_json::to_writer(
-        File::create(opts.save_dir.join(format!(
-            "{}.json",
-            Local::now().format("%Y-%m-%d_%H-%M-%S")
-        )))?,
+        File::create(
+            opts.save_dir
+                .join(format!("{}.json", Local::now().format("%Y-%m-%d_%H-%M-%S"))),
+        )?,
         &records,
     )?;
 

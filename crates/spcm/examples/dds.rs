@@ -10,8 +10,6 @@ struct Opts {
 }
 
 fn main() -> anyhow::Result<()> {
-    println!("{}", std::backtrace::Backtrace::capture());
-
     env_logger::builder().format_timestamp_nanos().init();
     let opts = Opts::parse();
 

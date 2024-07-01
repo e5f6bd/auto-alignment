@@ -964,6 +964,69 @@ impl DdsCoreMut<'_> {
         (self.0 .0).check(unsafe { spcm_dwSetParam_d64(self.0 .0 .0, register, amplitude_slope) })
     }
 }
+pub const FREQUENCY_STEP: f64 = 1.25e9 / (1u64 << 32) as f64;
+pub const PHASE_STEP: f64 = 360. / 4096.;
+#[derive(Debug, Error)]
+pub enum GetExactDdsParamError {
+    #[error("API returned an error: {0:?}")]
+    ApiError(#[from] Error),
+    #[error("API returned an inconvertible value: got {0:30.30}")]
+    ConversionFailed(f64),
+}
+impl DdsCore<'_> {
+    pub fn frequency_exact(self) -> Result<u32, GetExactDdsParamError> {
+        let f = self.frequency()?;
+        let ret = (f / FREQUENCY_STEP).round() as u32;
+        if ret as f64 * FREQUENCY_STEP == f {
+            Ok(ret)
+        } else {
+            Err(GetExactDdsParamError::ConversionFailed(f))
+        }
+    }
+    pub fn phase_exact(self) -> Result<u16, GetExactDdsParamError> {
+        let f = self.phase()?;
+        let ret = (f / PHASE_STEP).round() as u16;
+        if ret as f64 * PHASE_STEP == f {
+            Ok(ret)
+        } else {
+            Err(GetExactDdsParamError::ConversionFailed(f))
+        }
+    }
+}
+#[derive(Debug, Error)]
+pub enum SetExactDdsParamError<T: std::fmt::Display> {
+    #[error("API returned an error: {0:?}")]
+    ApiError(#[from] Error),
+    #[error("Error while retrieving the resulting value: {0:?}")]
+    GetFailed(#[from] GetExactDdsParamError),
+    #[error("Failed to set exact value: expected {0}, found {1}")]
+    ExactFailed(T, T),
+}
+impl DdsCoreMut<'_> {
+    pub fn set_frequency_exact(
+        &mut self,
+        frequency: u32,
+    ) -> Result<(), SetExactDdsParamError<u32>> {
+        self.set_frequency(frequency as f64 * FREQUENCY_STEP)?;
+        let result = self.frequency_exact()?;
+        if result == frequency {
+            Ok(())
+        } else {
+            Err(SetExactDdsParamError::ExactFailed(frequency, result))
+        }
+    }
+
+    /// Panics if !(phase < 4096).
+    pub fn set_phase_exact(&mut self, phase: u16) -> Result<(), SetExactDdsParamError<u16>> {
+        self.set_phase(phase as f64 * PHASE_STEP)?;
+        let result = self.phase_exact()?;
+        if result == phase {
+            Ok(())
+        } else {
+            Err(SetExactDdsParamError::ExactFailed(phase, result))
+        }
+    }
+}
 
 #[derive(Debug, TryFromPrimitive)]
 #[repr(i32)]
