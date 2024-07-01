@@ -1,4 +1,5 @@
 use std::{
+    backtrace::{Backtrace as Backtrace_, Backtrace},
     ffi::{c_ulong, c_void, CString, NulError},
     fmt::{Debug, Display},
     num::TryFromIntError,
@@ -111,13 +112,14 @@ pub struct Error {
     api_error_code: ErrorCode,
     error_code: ErrorCode,
     message: BString,
+    backtrace: Backtrace_,
 }
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "API error code: {:?}, Error code {:?}, message: {:?}",
-            self.api_error_code, self.error_code, self.message
+            "API error code: {:?}, Error code: {:?}, message: {:?}\n\n{}",
+            self.api_error_code, self.error_code, self.message, self.backtrace,
         )
     }
 }
@@ -233,6 +235,7 @@ impl Device {
                 api_error_code: ErrorCode(api_error_code),
                 error_code: ErrorCode(error_code),
                 message: BString::new(error_buffer),
+                backtrace: Backtrace::capture(),
             })
         } else {
             Ok(())
@@ -551,8 +554,8 @@ impl Device {
         Ok(ret.try_into()?)
     }
 
-    pub fn set_clock_mode(&mut self, mode: ClockMode) -> Result<(), ClockModeError> {
-        Ok(self.check(unsafe { spcm_dwSetParam_i32(self.0, SPC_CLOCKMODE as _, mode as _) })?)
+    pub fn set_clock_mode(&mut self, mode: ClockMode) -> Result<(), Error> {
+        self.check(unsafe { spcm_dwSetParam_i32(self.0, SPC_CLOCKMODE as _, mode as _) })
     }
 }
 
@@ -959,5 +962,32 @@ impl DdsCoreMut<'_> {
     pub fn set_amplitude_slope(&mut self, amplitude_slope: f64) -> Result<(), Error> {
         let register = self.amplitude_slope_register();
         (self.0 .0).check(unsafe { spcm_dwSetParam_d64(self.0 .0 .0, register, amplitude_slope) })
+    }
+}
+
+#[derive(Debug, TryFromPrimitive)]
+#[repr(i32)]
+pub enum DdsTriggerSource {
+    None = SPCM_DDS_TRG_SRC_NONE as _,
+    Timer = SPCM_DDS_TRG_SRC_TIMER as _,
+    Card = SPCM_DDS_TRG_SRC_CARD as _,
+}
+#[derive(Debug, Error)]
+pub enum DdsTriggerSourceError {
+    #[error("API returned an error: {0:?}")]
+    ApiError(#[from] Error),
+    #[error("Unknown DDS trigger source: {0:?}")]
+    UnknownSource(#[from] TryFromPrimitiveError<DdsTriggerSource>),
+}
+impl Device {
+    pub fn dds_trigger_source(&self) -> Result<DdsTriggerSource, DdsTriggerSourceError> {
+        let mut ret = 0;
+        let ret_ptr = (&mut ret) as _;
+        self.check(unsafe { spcm_dwGetParam_i32(self.0, SPC_DDS_TRG_SRC as _, ret_ptr) })?;
+        Ok(ret.try_into()?)
+    }
+
+    pub fn set_dds_trigger_source(&mut self, source: DdsTriggerSource) -> Result<(), Error> {
+        self.check(unsafe { spcm_dwSetParam_i32(self.0, SPC_DDS_TRG_SRC as _, source as _) })
     }
 }
