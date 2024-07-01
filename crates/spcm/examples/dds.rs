@@ -2,10 +2,7 @@ use std::io::stdin;
 
 use anyhow::bail;
 use clap::Parser;
-use spcm::{
-    CardMode, ClockMode, DdsCommand, DdsTriggerSource, Device, ExtendedFeature, M2Command,
-    TriggerMask,
-};
+use spcm::{CardMode, ClockMode, DdsCommand, Device, ExtendedFeature, M2Command, TriggerMask};
 
 #[derive(Parser)]
 struct Opts {
@@ -78,13 +75,20 @@ fn main() -> anyhow::Result<()> {
     // Reset
     device.execute_dds_command(DdsCommand::Reset)?;
 
+    // Start
+    // device.execute_commands([M2Command::CardStart, M2Command::CardEnableTrigger])?;
+    device.execute_command(M2Command::CardStart)?;
+
     // Command sequence
     for step in 0..10 {
+        // Press enter to reflect changes
+        println!("Press Enter to send trigger ({step}/15)");
+        stdin().read_line(&mut String::new())?;
         for i in 0..4 {
             let index = if i == 0 { 0 } else { 19 + i };
             let mut core = device.dds_core_mut(index);
             core.set_amplitude(1.0)?;
-            core.set_frequency(step as f64 * 1e6)?;
+            core.set_frequency((step + 1) as f64 * 1e6)?;
 
             println!(
                 "Generated signal at core {index:2}: frequency = {:10.30} Hz, phase = {} degree, and amplitude = {}", 
@@ -93,20 +97,10 @@ fn main() -> anyhow::Result<()> {
         }
         // device.set_dds_trigger_source(DdsTriggerSource::None)?;
         device.execute_dds_command(DdsCommand::ExecuteAtTrigger)?;
-    }
-
-    // Write
-    device.execute_dds_command(DdsCommand::WriteToCard)?;
-
-    // Start and execute
-    // device.execute_commands([M2Command::CardStart, M2Command::CardEnableTrigger])?;
-    device.execute_command(M2Command::CardStart)?;
-
-    for i in 0..15 {
-        println!("Press Enter to send trigger ({i}/15)");
-        stdin().read_line(&mut String::new())?;
+        // Write
+        device.execute_dds_command(DdsCommand::WriteToCard)?;
+        // Trigger
         device.execute_command(M2Command::CardForceTrigger)?;
-        // device.execute_dds_command(DdsCommand::ExecuteNow)?;
     }
 
     device.execute_command(M2Command::CardStop)?;
